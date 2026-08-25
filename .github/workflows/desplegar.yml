@@ -1,0 +1,54 @@
+name: Probar y desplegar
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  probar:
+    name: Pruebas y tipos
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Tipos
+        run: npx tsc --noEmit
+      - name: Pruebas del dominio
+        run: npm test
+      - name: Compilar
+        run: npx vite build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
+          retention-days: 5
+
+  desplegar:
+    name: Desplegar a Firebase Hosting
+    needs: probar
+    # Solo despliega desde main, nunca desde un pull request.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx vite build
+      - uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          # Este secreto lo crea `firebase init hosting:github` solo.
+          # Nunca hay que copiarlo ni pegarlo a mano en ningún lado.
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_VENTAS_9A210 }}
+          projectId: ventas-9a210
+          target: licoreria
+          channelId: live

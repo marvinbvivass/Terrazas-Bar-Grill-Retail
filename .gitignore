@@ -11,3 +11,13 @@ dist-ssr/
 # artefactos de las pruebas de extremo a extremo
 shot-*.png
 e2e*.mjs
+
+# firebase
+.firebase/
+firebase-debug.log
+*-debug.log
+
+# credenciales: nunca, bajo ninguna circunstancia
+*serviceAccount*.json
+*service-account*.json
+.env.local

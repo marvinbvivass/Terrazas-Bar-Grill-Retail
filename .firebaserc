@@ -1,0 +1,12 @@
+{
+  "projects": {
+    "default": "ventas-9a210"
+  },
+  "targets": {
+    "ventas-9a210": {
+      "hosting": {
+        "licoreria": ["CAMBIAR-POR-EL-ID-DEL-SITIO"]
+      }
+    }
+  }
+}
