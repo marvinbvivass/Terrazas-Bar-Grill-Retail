@@ -1,0 +1,76 @@
+@import 'tailwindcss';
+
+/*
+ * Tema de caja: contraste alto y objetivos grandes.
+ * La pantalla se opera de pie, con prisa y a veces con las manos mojadas.
+ */
+@theme {
+  --color-fondo: #0e1512;
+  --color-panel: #17201b;
+  --color-panel2: #1f2a23;
+  --color-panel3: #29362e;
+  --color-linea: #2b382f;
+  --color-linea2: #3b4c41;
+  --color-tinta: #e9ebe5;
+  --color-tinta2: #b6bfb8;
+  --color-apagado: #86918a;
+  --color-cobre: #d08a4a;
+  --color-cobre2: #f0ad72;
+  --color-frio: #5aa9c9;
+  --color-verde: #4fb286;
+  --color-alerta: #d96a5c;
+  --color-ambar: #d9ab4a;
+
+  --font-sans: 'Archivo', system-ui, -apple-system, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-fondo);
+  color: var(--color-tinta);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+}
+
+/* La caja se toca, no se selecciona */
+button {
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  cursor: pointer;
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--color-cobre);
+  outline-offset: 2px;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-linea2);
+  border-radius: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

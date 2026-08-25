@@ -1,0 +1,13 @@
+node_modules/
+dist/
+dist-ssr/
+*.local
+.DS_Store
+.env
+.env.*
+!.env.example
+*.log
+
+# artefactos de las pruebas de extremo a extremo
+shot-*.png
+e2e*.mjs
