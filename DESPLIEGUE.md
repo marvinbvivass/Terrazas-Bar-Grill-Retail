@@ -67,13 +67,18 @@ firebase deploy --only hosting           # después el sitio
 
 Abre la URL, entra con la cuenta que creaste, y espera unos segundos.
 
-La primera sincronización encuentra Firestore vacío y **sube sola el catálogo
-de ejemplo**: los 40 productos, sus presentaciones, códigos, precios,
-existencias y los cuatro clientes de prueba. A partir de ahí, cualquier otro
-dispositivo que entre con la misma cuenta ve lo mismo.
+**No hay catálogo de ejemplo.** El sistema arranca sin ni un producto, a
+propósito: nada de datos inventados que después haya que borrar de Firestore.
 
-Esa siembra solo ocurre si arriba no hay ni un producto. Cuando cargues los
-productos de verdad, no vuelve a correr.
+Lo único que se sube solo es la CONFIGURACIÓN sin la cual nada funciona:
+ubicaciones (sala, nevera, depósito), categorías, las cuatro listas de precio y
+los métodos de pago. Eso no son datos del negocio, son las piezas del
+mecanismo — el motor de precios no puede resolver nada si no existe al menos
+una lista.
+
+Los productos los cargas tú desde la pestaña **Catálogo**. Con poner el nombre,
+la categoría, el precio de una unidad y lo que te cuesta ya funciona todo: el
+precio de mayor y el margen salen solos.
 
 En la barra superior, a la derecha, hay un indicador que dice **Al día**,
 **N por subir**, **Subiendo…** o **Sin señal**. Se puede tocar para forzar una
@@ -146,13 +151,30 @@ La lógica de negocio sí (86 pruebas), y la aplicación se probó completa cont
 la copia local, pero estas cuatro cosas hay que verlas funcionar la primera vez:
 
 - Que las reglas dejen leer y escribir con la sesión iniciada.
-- Que la siembra automática suba los 40 productos sin quedarse a medias.
+- Que la configuración inicial suba sin quedarse a medias.
+- Que un producto creado en la caja llegue a Firestore con sus presentaciones,
+  códigos y precios completos.
 - Que una venta suba y descuente stock **una sola vez**.
 - Que un segundo dispositivo vea lo cargado en el primero.
 
 Si algo falla, el indicador de la barra pasa a **Falló al subir** y el detalle
 del error sale al pasarle el ratón por encima. Nada se pierde: lo que no sube
 se queda en la cola.
+
+---
+
+## Probar antes de desplegar
+
+Si quieres ver la caja funcionando ya, sin haber tocado Firebase:
+
+```bash
+npm run dev
+```
+
+En la pantalla de acceso sale un botón **Probar sin Firebase**. Trabaja contra
+tu equipo y no sincroniza nada. Ese botón **solo existe en modo desarrollo**:
+`npm run build` lo elimina del código, así que no queda ninguna puerta abierta
+en el sitio publicado. Hay una comprobación de eso en el flujo de despliegue.
 
 ---
 

@@ -4,7 +4,7 @@ import { hoy, sumarDias, textoLargo } from '../domain/dias'
 import { salir } from '../data/firebase'
 import type { Pos } from '../hooks/usePos'
 
-export type Vista = 'cuaderno' | 'clientes' | 'cierre'
+export type Vista = 'cuaderno' | 'clientes' | 'cierre' | 'catalogo'
 
 /**
  * Barra superior.
@@ -50,6 +50,13 @@ export function TopBar({
         </Tab>
         <Tab activo={vista === 'cierre'} onClick={() => onVista('cierre')}>
           Cierre
+        </Tab>
+        <Tab
+          activo={vista === 'catalogo'}
+          onClick={() => onVista('catalogo')}
+          insignia={pos.snapshot && pos.snapshot.productos.length === 0 ? 'vacío' : undefined}
+        >
+          Catálogo
         </Tab>
       </nav>
 

@@ -21,6 +21,8 @@ import type { Abono, Cliente, DiaNegocio, Pago, Presentacion, Producto, UUID, Ve
 import {
   anularVenta,
   cargarMovimientoComercial,
+  desactivarProducto as desactivarProductoDb,
+  guardarProducto as guardarProductoDb,
   cargarSnapshot,
   claveExistencia,
   guardarCliente,
@@ -29,7 +31,7 @@ import {
   pendientesDeSubir,
   registrarAbono,
   registrarVenta,
-  sembrarSiHaceFalta,
+  prepararConfiguracion,
   siguienteFolio,
   type Snapshot,
 } from '../data/db'
@@ -83,7 +85,7 @@ export function usePos() {
     let vivo = true
     void (async () => {
       await pedirAlmacenamientoPersistente()
-      await sembrarSiHaceFalta()
+      await prepararConfiguracion()
       const [s, comercial, cola] = await Promise.all([
         cargarSnapshot(),
         cargarMovimientoComercial(),
@@ -126,6 +128,8 @@ export function usePos() {
    * caja lleguen arriba, y la mercancía ya vendida reaparecería en el anaquel.
    */
   const sincronizar = useCallback(async (silencioso = true) => {
+    // En la puerta de desarrollo no hay a dónde sincronizar
+    if (import.meta.env.DEV && sessionStorage.getItem('sesion-solo-local') === '1') return
     if (!navigator.onLine) {
       if (!silencioso) setAviso({ texto: 'No hay señal para sincronizar', tono: 'error' })
       return
@@ -375,6 +379,36 @@ export function usePos() {
     [snapshot, dia, sincronizar],
   )
 
+  // -------------------------------------------------------------------------
+  // Catálogo
+  // -------------------------------------------------------------------------
+
+  const recargarCatalogo = useCallback(async () => {
+    const s2 = await cargarSnapshot()
+    setSnapshot(s2)
+    setPendientes(await pendientesDeSubir())
+  }, [])
+
+  const guardarProducto = useCallback(
+    async (armado: Parameters<typeof guardarProductoDb>[0]) => {
+      await guardarProductoDb(armado)
+      await recargarCatalogo()
+      setAviso({ texto: `${armado.producto.nombreCorto} guardado`, tono: 'ok' })
+      void sincronizar(true)
+    },
+    [recargarCatalogo, sincronizar],
+  )
+
+  const desactivarProducto = useCallback(
+    async (productoId: UUID) => {
+      await desactivarProductoDb(productoId)
+      await recargarCatalogo()
+      setAviso({ texto: 'Producto dado de baja', tono: 'ok' })
+      void sincronizar(true)
+    },
+    [recargarCatalogo, sincronizar],
+  )
+
   const crearCliente = useCallback(async (datos: Omit<Cliente, 'id' | 'creadoEn' | 'activo'>) => {
     const cliente: Cliente = { ...datos, id: crypto.randomUUID(), creadoEn: Date.now(), activo: true }
     await guardarCliente(cliente)
@@ -448,6 +482,9 @@ export function usePos() {
     actualizarTasa,
     registrar,
     anular,
+    guardarProducto,
+    desactivarProducto,
+    recargarCatalogo,
     cobrar,
     crearCliente,
     ventasAbiertasDe: (clienteId: UUID) => ventasAbiertas(clienteId, ventas, abonos, dia),

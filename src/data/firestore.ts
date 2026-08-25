@@ -13,7 +13,7 @@ import {
 import { obtenerFirestore } from './firebase'
 import { claveExistencia, db } from './db'
 import { movimientosDeVenta } from '../domain/cart'
-import { construirSemilla } from './seed'
+import { configuracionInicial } from './seed'
 import type { Abono, Venta } from '../domain/types'
 import type { RespuestaSync, Transporte } from './sync'
 
@@ -164,11 +164,14 @@ async function bajarSnapshot(): Promise<void> {
       leer<Record<string, unknown>>('clientes'),
     ])
 
-  // Primera vez contra un Firestore vacío: en vez de dejar la caja sin catálogo,
-  // se sube el que ya hay en local. Solo actúa si arriba no hay ni un producto,
-  // así que cuando estén cargados los 40 de verdad esto no vuelve a correr.
+  // Firestore recién creado: se sube la CONFIGURACIÓN (ubicaciones, categorías,
+  // listas, métodos de pago) para que el motor de precios tenga con qué
+  // trabajar. Productos no se inventa ninguno: los carga el encargado.
+  await subirConfiguracionSiFalta()
+
   if (productos.length === 0) {
-    await sembrarRemotoSiVacio()
+    // Catálogo vacío arriba. No se borra el local, que puede tener productos
+    // recién creados esperando en la cola.
     return
   }
 
@@ -233,64 +236,74 @@ async function bajarSnapshot(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Siembra remota
+// Configuración y catálogo
 // ---------------------------------------------------------------------------
 
 /**
- * Sube el catálogo de ejemplo la primera vez, si Firestore está vacío.
+ * Sube la configuración de arranque si Firestore no la tiene.
  *
- * Es lo que permite abrir la URL recién desplegada y ver algo. Cuando estén
- * cargados los 40 productos de verdad, esta función deja de hacer nada, porque
- * solo actúa si no hay ni un producto arriba.
+ * Son las piezas sin las que nada funciona: dónde está la mercancía, qué listas
+ * de precio existen y con qué se cobra. No son datos del negocio, así que no
+ * hay riesgo de "dato falso": son la estructura del mecanismo.
  */
-export async function sembrarRemotoSiVacio(): Promise<'sembrado' | 'ya-habia'> {
+export async function subirConfiguracionSiFalta(): Promise<boolean> {
   const fs = fsdb()
-  const hay = await getDocs(query(collection(fs, 'productos')))
-  if (!hay.empty) return 'ya-habia'
+  const marca = await getDoc(doc(fs, 'config', 'sistema'))
+  if (marca.exists()) return false
 
-  const s = construirSemilla()
-  const grupos: Array<[string, Array<Record<string, unknown>>, string]> = [
-    ['categorias', s.categorias as never[], 'id'],
-    ['ubicaciones', s.ubicaciones as never[], 'id'],
-    ['productos', s.productos as never[], 'id'],
-    ['presentaciones', s.presentaciones as never[], 'id'],
-    ['codigos', s.codigos as never[], 'codigo'],
-    ['listas', s.listas as never[], 'id'],
-    ['precios', s.precios as never[], 'id'],
-    ['metodosPago', s.metodosPago as never[], 'id'],
-  ]
+  const c = configuracionInicial()
+  const lote = writeBatch(fs)
+  for (const x of c.categorias) lote.set(doc(fs, 'categorias', x.id), limpiar(x))
+  for (const x of c.ubicaciones) lote.set(doc(fs, 'ubicaciones', x.id), limpiar(x))
+  for (const x of c.listas) lote.set(doc(fs, 'listas', x.id), limpiar(x))
+  for (const x of c.metodosPago) lote.set(doc(fs, 'metodosPago', x.id), limpiar(x))
+  lote.set(doc(fs, 'config', 'contadores'), { ventas: 0 }, { merge: true })
+  lote.set(doc(fs, 'config', 'sistema'), { preparado: true, fecha: Date.now() })
+  await lote.commit()
+  return true
+}
 
-  // Los lotes de Firestore aguantan 500 escrituras; los precios pasan de eso.
-  for (const [nombre, filas, clave] of grupos) {
-    for (let i = 0; i < filas.length; i += 400) {
-      const lote = writeBatch(fs)
-      for (const fila of filas.slice(i, i + 400)) {
-        lote.set(doc(fs, nombre, String(fila[clave])), limpiar(fila))
-      }
-      await lote.commit()
-    }
-  }
+/**
+ * Sube un producto completo: la ficha, sus presentaciones, sus códigos, sus
+ * precios y su existencia inicial.
+ *
+ * La existencia se escribe con `set` y no con `increment`: es el conteo que
+ * declaró el encargado, no un movimiento. Reenviarlo deja el mismo número.
+ */
+export async function subirProducto(productoId: string): Promise<void> {
+  const fs = fsdb()
+  const [producto, presentaciones, precios, existencias] = await Promise.all([
+    db.productos.get(productoId),
+    db.presentaciones.where('productoId').equals(productoId).toArray(),
+    db.precios.toArray(),
+    db.existencias.where('productoId').equals(productoId).toArray(),
+  ])
+  if (!producto) return
+
+  const idsPres = new Set(presentaciones.map((p) => p.id))
+  const codigos = (await db.codigos.toArray()).filter((c) => idsPres.has(c.presentacionId))
+  const susPrecios = precios.filter((p) => idsPres.has(p.presentacionId))
 
   const lote = writeBatch(fs)
-  for (const e of s.existencias) {
-    lote.set(doc(fs, 'existencias', claveExistencia(e.productoId, e.ubicacionId)), limpiar(e))
+  lote.set(doc(fs, 'productos', producto.id), limpiar(producto))
+  for (const p of presentaciones) lote.set(doc(fs, 'presentaciones', p.id), limpiar(p))
+  for (const c of codigos) lote.set(doc(fs, 'codigos', c.codigo), limpiar(c))
+  for (const p of susPrecios) lote.set(doc(fs, 'precios', p.id), limpiar(p))
+  for (const e of existencias) {
+    lote.set(
+      doc(fs, 'existencias', e.id),
+      { productoId: e.productoId, ubicacionId: e.ubicacionId, cantidadBase: e.cantidadBase },
+      { merge: true },
+    )
   }
-  const semillaClientes = await db.clientes.toArray()
-  for (const c of semillaClientes) lote.set(doc(fs, 'clientes', c.id), limpiar(c))
-  lote.set(REF_CONTADORES(), { ventas: 0 }, { merge: true })
   await lote.commit()
-
-  return 'sembrado'
 }
 
 /** Sube un cliente creado sin señal */
 export async function subirCliente(clienteId: string): Promise<void> {
   const cliente = await db.clientes.get(clienteId)
   if (!cliente) return
-  const fs = fsdb()
-  await runTransaction(fs, async (tx) => {
-    tx.set(doc(fs, 'clientes', cliente.id), limpiar(cliente), { merge: true })
-  })
+  await writeBatch(fsdb()).set(doc(fsdb(), 'clientes', cliente.id), limpiar(cliente), { merge: true }).commit()
 }
 
 export async function hayCatalogoRemoto(): Promise<boolean> {
@@ -301,6 +314,13 @@ export async function hayCatalogoRemoto(): Promise<boolean> {
 // ---------------------------------------------------------------------------
 
 export const transporteFirestore: Transporte = {
+  async subirCatalogo(productoIds) {
+    await subirConfiguracionSiFalta()
+    for (const id of productoIds) await subirProducto(id)
+  },
+  async subirClientes(clienteIds) {
+    for (const id of clienteIds) await subirCliente(id)
+  },
   async subirVentas(ventas) {
     const salida: RespuestaSync[] = []
     for (const v of ventas) salida.push(await subirUnaVenta(v))

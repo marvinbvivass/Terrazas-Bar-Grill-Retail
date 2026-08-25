@@ -17,7 +17,7 @@ import type {
   UUID,
   Venta,
 } from '../domain/types'
-import { CLIENTES_SEMILLA, TASA_VES_INICIAL, construirSemilla } from './seed'
+import { TASA_VES_INICIAL, configuracionInicial } from './seed'
 
 /**
  * Réplica local. Es de donde lee la caja SIEMPRE, haya o no señal.
@@ -39,6 +39,10 @@ export interface Config {
 export type Pendiente =
   | { id: UUID; tipo: 'venta'; venta: Venta; intentos: number; ultimoError: string | null; creadaEn: number }
   | { id: UUID; tipo: 'abono'; abono: Abono; intentos: number; ultimoError: string | null; creadaEn: number }
+  // Para productos y clientes solo viaja el id: lo que se sube se lee de la
+  // base local en el momento del envío, así siempre sube la última versión.
+  | { id: UUID; tipo: 'producto'; intentos: number; ultimoError: string | null; creadaEn: number }
+  | { id: UUID; tipo: 'cliente'; intentos: number; ultimoError: string | null; creadaEn: number }
 
 /** @deprecated se mantiene el nombre viejo para no romper importaciones */
 export type VentaPendiente = Pendiente
@@ -111,33 +115,29 @@ export async function pedirAlmacenamientoPersistente(): Promise<boolean> {
   }
 }
 
-/** Carga la semilla la primera vez. En producción esto lo reemplaza el snapshot del servidor. */
-export async function sembrarSiHaceFalta(): Promise<void> {
-  const yaHay = await db.productos.count()
+/**
+ * Escribe la configuración de arranque la primera vez.
+ *
+ * Solo estructura: ubicaciones, categorías, listas de precio y métodos de pago.
+ * Ni un producto, ni un cliente. El catálogo lo carga el encargado y los
+ * clientes de fiado aparecen al fiar la primera venta.
+ */
+export async function prepararConfiguracion(): Promise<void> {
+  const yaHay = await db.listas.count()
   if (yaHay > 0) return
 
-  const s = construirSemilla()
+  const c = configuracionInicial()
   await db.transaction(
     'rw',
-    [db.categorias, db.ubicaciones, db.productos, db.presentaciones, db.codigos,
-     db.listas, db.precios, db.existencias, db.metodosPago, db.tasas,
-     db.clientes, db.config],
+    [db.categorias, db.ubicaciones, db.listas, db.metodosPago, db.tasas, db.config],
     async () => {
-      await db.categorias.bulkPut(s.categorias)
-      await db.ubicaciones.bulkPut(s.ubicaciones)
-      await db.productos.bulkPut(s.productos)
-      await db.presentaciones.bulkPut(s.presentaciones)
-      await db.codigos.bulkPut(s.codigos)
-      await db.listas.bulkPut(s.listas)
-      await db.precios.bulkPut(s.precios)
-      await db.existencias.bulkPut(
-        s.existencias.map((e) => ({ ...e, id: claveExistencia(e.productoId, e.ubicacionId) })),
-      )
-      await db.metodosPago.bulkPut(s.metodosPago)
+      await db.categorias.bulkPut(c.categorias)
+      await db.ubicaciones.bulkPut(c.ubicaciones)
+      await db.listas.bulkPut(c.listas)
+      await db.metodosPago.bulkPut(c.metodosPago)
       await db.tasas.bulkPut([
         { id: 'VES', moneda: 'VES', tasa: TASA_VES_INICIAL, fecha: Date.now(), fuente: 'manual' },
       ])
-      await db.clientes.bulkPut(CLIENTES_SEMILLA)
       await db.config.bulkPut([
         { clave: 'usuarioId', valor: 'usuario-demo' },
         { clave: 'usuarioNombre', valor: 'Encargado' },
@@ -146,6 +146,9 @@ export async function sembrarSiHaceFalta(): Promise<void> {
     },
   )
 }
+
+/** @deprecated nombre viejo, se mantiene mientras quedan llamadas */
+export const sembrarSiHaceFalta = prepararConfiguracion
 
 // ---------------------------------------------------------------------------
 // Instantánea en memoria
@@ -283,7 +286,80 @@ export async function registrarAbono(abono: Abono): Promise<void> {
 }
 
 export async function guardarCliente(cliente: Cliente): Promise<void> {
-  await db.clientes.put(cliente)
+  await db.transaction('rw', [db.clientes, db.outbox], async () => {
+    await db.clientes.put(cliente)
+    await db.outbox.put({
+      id: cliente.id,
+      tipo: 'cliente',
+      intentos: 0,
+      ultimoError: null,
+      creadaEn: Date.now(),
+    })
+  })
+}
+
+/**
+ * Guarda un producto con todo lo suyo, en una sola transacción.
+ *
+ * Al editar se BORRAN antes las presentaciones, códigos y precios viejos: si no,
+ * quitar un six-pack del formulario lo dejaría vivo en la base y seguiría
+ * apareciendo en la caja.
+ */
+export async function guardarProducto(armado: {
+  producto: Producto
+  presentaciones: Presentacion[]
+  codigos: CodigoBarras[]
+  precios: Precio[]
+  existencias: Existencia[]
+}): Promise<void> {
+  await db.transaction(
+    'rw',
+    [db.productos, db.presentaciones, db.codigos, db.precios, db.existencias, db.outbox],
+    async () => {
+      const viejas = await db.presentaciones.where('productoId').equals(armado.producto.id).toArray()
+      const idsViejos = viejas.map((p) => p.id)
+
+      const codigosViejos = (await db.codigos.toArray()).filter((c) => idsViejos.includes(c.presentacionId))
+      await db.codigos.bulkDelete(codigosViejos.map((c) => c.codigo))
+
+      const preciosViejos = (await db.precios.toArray()).filter((p) => idsViejos.includes(p.presentacionId))
+      await db.precios.bulkDelete(preciosViejos.map((p) => p.id))
+
+      await db.presentaciones.bulkDelete(idsViejos)
+
+      await db.productos.put(armado.producto)
+      await db.presentaciones.bulkPut(armado.presentaciones)
+      await db.codigos.bulkPut(armado.codigos)
+      await db.precios.bulkPut(armado.precios)
+      for (const e of armado.existencias) {
+        await db.existencias.put({ ...e, id: claveExistencia(e.productoId, e.ubicacionId) })
+      }
+
+      await db.outbox.put({
+        id: armado.producto.id,
+        tipo: 'producto',
+        intentos: 0,
+        ultimoError: null,
+        creadaEn: Date.now(),
+      })
+    },
+  )
+}
+
+/** Da de baja un producto sin borrarlo: puede estar en ventas viejas */
+export async function desactivarProducto(productoId: UUID): Promise<void> {
+  const p = await db.productos.get(productoId)
+  if (!p) return
+  await db.transaction('rw', [db.productos, db.outbox], async () => {
+    await db.productos.put({ ...p, activo: false })
+    await db.outbox.put({
+      id: productoId,
+      tipo: 'producto',
+      intentos: 0,
+      ultimoError: null,
+      creadaEn: Date.now(),
+    })
+  })
 }
 
 /** Ventas y cobros que necesita la vista de crédito y la de cierre */

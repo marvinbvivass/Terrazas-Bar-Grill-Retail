@@ -9,6 +9,7 @@ import { PaymentSheet } from './ui/PaymentSheet'
 import { FiarSheet } from './ui/FiarSheet'
 import { ClientesView } from './ui/ClientesView'
 import { CierreView } from './ui/CierreView'
+import { CatalogoView } from './ui/CatalogoView'
 
 export function App() {
   const sesion = useSesion()
@@ -66,6 +67,7 @@ function Caja() {
 
       {vista === 'clientes' && <ClientesView pos={pos} />}
       {vista === 'cierre' && <CierreView pos={pos} />}
+      {vista === 'catalogo' && <CatalogoView pos={pos} />}
 
       {hoja === 'contado' && <PaymentSheet pos={pos} onCerrar={() => setHoja('ninguna')} />}
       {hoja === 'fiar' && <FiarSheet pos={pos} onCerrar={() => setHoja('ninguna')} />}

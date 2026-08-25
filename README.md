@@ -20,17 +20,26 @@ npm install
 npm run dev      # http://localhost:5173
 ```
 
-No hace falta backend ni base de datos. La primera vez se siembran 40 productos de
-ejemplo en IndexedDB y la caja queda operativa.
+No hace falta backend ni base de datos para arrancar. En la pantalla de acceso hay un
+botón **Probar sin Firebase** (solo en modo desarrollo) que entra directo.
+
+**El sistema arranca sin ni un producto, a propósito.** Nada de catálogo de mentira que
+después haya que borrar. Los productos se cargan desde la pestaña Catálogo.
 
 ```bash
-npm test         # 80 pruebas de la lógica de negocio
+npm test         # 107 pruebas de la lógica de negocio
 npm run build    # verifica tipos y compila
 ```
 
 ---
 
-## Las tres pantallas
+## Las cuatro pantallas
+
+**Catálogo** — dar de alta productos. Un producto son en realidad cinco cosas (ficha,
+presentaciones, códigos, un precio por cada lista, existencia inicial), pero el
+formulario pide solo lo que se sabe de memoria y arma el resto: el precio de mayor y el
+margen se calculan solos mientras escribes.
+
 
 **Cuaderno** — transcribir el día. Cuadrícula de 40 productos, escáner como atajo, frío
 vs. al tiempo por línea y dos escalones de mayoreo que se activan solos. Cada venta se
@@ -70,6 +79,7 @@ src/
     stock.ts       Conversión presentación ↔ unidad base, desglosar()
     pricing.ts     Motor de precios: puerto de resolver_precio() del SQL
     cart.ts        Carrito, totales, IVA, IGTF, pago mixto, cierre de venta
+    catalogo.ts    Armar un producto completo desde el formulario
     credito.ts     Saldos, ventas abiertas y reparto de abonos
     cierre.ts      Las dos cifras del día
   data/

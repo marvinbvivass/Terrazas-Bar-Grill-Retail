@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { entrar, mensajeDeError } from '../data/firebase'
+import { entrarSoloLocal } from '../hooks/useSesion'
 
 /**
  * Pantalla de acceso.
@@ -90,6 +91,22 @@ export function Login({ sinConexion }: { sinConexion: boolean }) {
           Las cuentas se crean desde la consola de Firebase, en Authentication → Users.
           No hay registro abierto a propósito.
         </p>
+
+        {import.meta.env.DEV && (
+          <div className="mt-5 border-t border-linea pt-4">
+            <button
+              type="button"
+              onClick={entrarSoloLocal}
+              className="w-full rounded-lg border border-linea2 py-2.5 text-[13.5px] font-semibold text-tinta2 hover:border-cobre hover:text-cobre2"
+            >
+              Probar sin Firebase
+            </button>
+            <p className="mt-2 text-[11.5px] leading-snug text-apagado">
+              Solo en modo desarrollo. Trabaja contra este equipo y no sincroniza nada. Este
+              botón no existe en la versión desplegada.
+            </p>
+          </div>
+        )}
       </form>
     </div>
   )

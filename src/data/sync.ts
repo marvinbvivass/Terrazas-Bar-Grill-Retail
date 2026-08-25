@@ -25,7 +25,11 @@ export interface Transporte {
   subirVentas(ventas: Venta[]): Promise<RespuestaSync[]>
   /** Sube cobros a clientes. Idempotente por `abono.id`. */
   subirAbonos(abonos: Abono[]): Promise<RespuestaSync[]>
-  /** Baja el catálogo completo. Con 40 productos son unos pocos kilobytes. */
+  /** Sube productos creados o editados en la caja, con todo lo suyo. */
+  subirCatalogo(productoIds: string[]): Promise<void>
+  /** Sube clientes de fiado creados en la caja. */
+  subirClientes(clienteIds: string[]): Promise<void>
+  /** Baja el catálogo completo. Con pocos productos son unos kilobytes. */
   bajarSnapshot(): Promise<void>
 }
 
@@ -42,6 +46,12 @@ export const transporteLocal: Transporte = {
   },
   async subirAbonos() {
     return []
+  },
+  async subirCatalogo() {
+    /* sin backend todavía */
+  },
+  async subirClientes() {
+    /* sin backend todavía */
   },
   async bajarSnapshot() {
     /* sin backend todavía */
@@ -66,11 +76,26 @@ export async function empujarCola(limite = 50): Promise<ResultadoEmpuje> {
 
   const ventas = pendientes.filter((p) => p.tipo === 'venta').map((p) => p.venta)
   const abonos = pendientes.filter((p) => p.tipo === 'abono').map((p) => p.abono)
+  const productos = pendientes.filter((p) => p.tipo === 'producto')
+  const clientes = pendientes.filter((p) => p.tipo === 'cliente')
 
   let aceptadas = 0
   let rechazadas = 0
 
   try {
+    // El catálogo va PRIMERO: una venta que menciona un producto que el
+    // servidor todavía no conoce es una venta huérfana en los reportes.
+    if (productos.length) {
+      await transporte.subirCatalogo(productos.map((p) => p.id))
+      await db.outbox.bulkDelete(productos.map((p) => p.id))
+      aceptadas += productos.length
+    }
+    if (clientes.length) {
+      await transporte.subirClientes(clientes.map((p) => p.id))
+      await db.outbox.bulkDelete(clientes.map((p) => p.id))
+      aceptadas += clientes.length
+    }
+
     const respuestas = [
       ...(ventas.length ? await transporte.subirVentas(ventas) : []),
       ...(abonos.length ? await transporte.subirAbonos(abonos) : []),
