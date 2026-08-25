@@ -17,7 +17,7 @@ import {
 import { calcularCierre, type Cierre } from '../domain/cierre'
 import { construirAbono, resumirClientes, saldoDeCliente, ventasAbiertas, type PlanAbono } from '../domain/credito'
 import { hoy, inicioDe } from '../domain/dias'
-import type { Abono, Cliente, DiaNegocio, Pago, Presentacion, Producto, UUID, Venta } from '../domain/types'
+import type { Abono, Cliente, DiaNegocio, MonedaCodigo, Pago, Presentacion, Producto, UUID, Venta } from '../domain/types'
 import {
   anularVenta,
   cargarMovimientoComercial,
@@ -61,7 +61,7 @@ async function prepararTransporte(): Promise<void> {
  * Estado de la aplicación.
  *
  * Ojo con el cambio de modelo: esto ya no es una caja en vivo. El encargado
- * anota las ventas en un cuaderno durante el día y las transcribe al cerrar,
+ * carga lo vendido al cerrar la jornada, no venta por venta en el momento,
  * así que TODO se registra contra un "día de trabajo" que el usuario elige, no
  * contra el reloj. Por eso `dia` es estado de primer nivel y no un detalle.
  */
@@ -280,13 +280,17 @@ export function usePos() {
   const anadirPago = useCallback((pago: Pago) => setCarrito((c) => agregarPago(c, pago)), [])
   const removerPago = useCallback((pagoId: UUID) => setCarrito((c) => quitarPago(c, pagoId)), [])
 
-  const actualizarTasa = useCallback(async (tasa: number) => {
-    await guardarTasa('VES', tasa)
-    setSnapshot((s) => (s ? { ...s, tasas: { ...s.tasas, VES: tasa } } : s))
+  /**
+   * La tasa se guarda por moneda. Antes solo existía la del bolívar cableada
+   * aquí dentro, y el peso no se podía cambiar desde la aplicación.
+   */
+  const actualizarTasa = useCallback(async (moneda: MonedaCodigo, tasa: number) => {
+    await guardarTasa(moneda, tasa)
+    setSnapshot((s) => (s ? { ...s, tasas: { ...s.tasas, [moneda]: tasa } } : s))
   }, [])
 
   // -------------------------------------------------------------------------
-  // Registrar una venta del cuaderno
+  // Registrar la carga del día
   // -------------------------------------------------------------------------
 
   const aplicarSalidaDeStock = useCallback((venta: Venta) => {
@@ -303,14 +307,21 @@ export function usePos() {
     return movimientos
   }, [])
 
+  /**
+   * Registra una carga del día.
+   *
+   * Recibe el carrito por parámetro en vez de leer el del estado porque la
+   * pantalla de venta arma el suyo: se cargan cantidades por producto y se
+   * cierra de una vez, no hay un carrito vivo que sobreviva entre pantallas.
+   */
   const registrar = useCallback(
-    async (clienteId: UUID | null): Promise<Venta | null> => {
-      if (!snapshot || carrito.lineas.length === 0) return null
+    async (aRegistrar: Carrito, clienteId: UUID | null): Promise<Venta | null> => {
+      if (!snapshot || aRegistrar.lineas.length === 0) return null
 
       const folio = await siguienteFolio()
       const datos = {
         dia,
-        // Sin hora real en el cuaderno, se ancla al mediodía del día de trabajo:
+        // Sin hora real de la venta, se ancla al mediodía del día de trabajo:
         // así ninguna venta se escapa al día anterior o al siguiente.
         fecha: inicioDe(dia) + 12 * 3600_000,
         usuarioId: snapshot.usuarioId,
@@ -320,26 +331,25 @@ export function usePos() {
       }
 
       const venta = clienteId
-        ? construirVentaCredito(carrito, datos, clienteId)
-        : construirVentaContado(carrito, datos)
+        ? construirVentaCredito(aRegistrar, datos, clienteId)
+        : construirVentaContado(aRegistrar, datos)
 
       const movimientos = aplicarSalidaDeStock(venta)
       await registrarVenta(venta, movimientos)
 
       setVentas((v) => [...v, venta])
       setPendientes(await pendientesDeSubir())
-      setCarrito(carritoVacio())
 
       const nombre = clientes.find((c) => c.id === clienteId)?.nombre
       setAviso({
-        texto: clienteId ? `Fiado a ${nombre ?? 'cliente'}` : 'Venta cargada',
+        texto: clienteId ? `Crédito cargado a ${nombre ?? 'cliente'}` : 'Venta del día cargada',
         tono: 'ok',
       })
       // Sin esperar: si hay señal sube ya, y si no, se queda en la cola.
       void sincronizar(true)
       return venta
     },
-    [snapshot, carrito, dia, clientes, aplicarSalidaDeStock, sincronizar],
+    [snapshot, dia, clientes, aplicarSalidaDeStock, sincronizar],
   )
 
   const anular = useCallback(async (ventaId: UUID) => {

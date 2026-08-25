@@ -213,7 +213,7 @@ export type CondicionVenta = 'contado' | 'credito'
 export type EstadoVenta = 'registrada' | 'anulada'
 
 /**
- * Una venta del cuaderno.
+ * Una venta del día.
  *
  * Ojo con las tres fechas, porque son tres cosas distintas y confundirlas es
  * lo que hace que un cierre no cuadre:
@@ -222,7 +222,7 @@ export type EstadoVenta = 'registrada' | 'anulada'
  *                 Es texto, no timestamp, a propósito: agrupar por fecha con
  *                 husos horarios es la forma clásica de perder las ventas de
  *                 las once de la noche.
- *   fecha         cuándo ocurrió la venta según el cuaderno.
+ *   fecha         cuándo ocurrió la venta.
  *   registradaEn  cuándo el encargado la tecleó. Puede ser al día siguiente.
  */
 export interface Venta {

@@ -61,7 +61,7 @@ describe('cierre del día', () => {
     const c = calcularCierre({ dia: '2026-08-24', ventas, abonos: [], metodosPago: METODOS })
 
     expect(c.contado).toBe(30)
-    expect(c.fiadoHoy).toBe(20)
+    expect(c.creditoHoy).toBe(20)
     expect(c.cobrosCredito).toBe(0)
 
     // La gaveta tiene 30, aunque se vendieron 50
@@ -97,7 +97,7 @@ describe('cierre del día', () => {
     // Lunes: se fiaron 20, no entró nada
     const lunes = calcularCierre({ dia: '2026-08-24', ventas, abonos: [abono], metodosPago: METODOS })
     expect(lunes.entroEnCaja).toBe(0)
-    expect(lunes.fiadoHoy).toBe(20)
+    expect(lunes.creditoHoy).toBe(20)
     expect(lunes.vendidoHoy).toBe(20)
 
     // Martes: entran los 12 de contado + los 20 que pagó Juan

@@ -32,18 +32,34 @@ export default defineConfig({
           },
         ],
       },
+      /*
+       * El manifest es lo que decide cómo se instala en Android. Tres cosas
+       * importan y las tres estaban mal para un teléfono:
+       *
+       *  - `orientation` era 'landscape', que en un móvil fuerza al usuario a
+       *    girar el aparato para usar la aplicación. Ahora es 'portrait'.
+       *  - `lang` decía 'en', y Android lo usa para el idioma del atajo.
+       *  - `display_override` con 'standalone' primero evita que algunos
+       *    lanzadores la abran como pestaña de navegador con barra de URL.
+       */
       manifest: {
-        name: 'Caja · Licorería',
-        short_name: 'Caja',
-        description: 'Punto de venta e inventario de licorería. Funciona sin conexión.',
+        name: 'Terrazas Bar Grill',
+        short_name: 'Terrazas',
+        description: 'Inventario, ventas y cuentas por cobrar. Funciona sin conexión.',
+        lang: 'es',
+        dir: 'ltr',
         theme_color: '#0e1512',
         background_color: '#0e1512',
         display: 'standalone',
-        orientation: 'landscape',
+        display_override: ['standalone', 'minimal-ui'],
+        orientation: 'portrait',
         start_url: '/',
+        scope: '/',
+        categories: ['business', 'productivity'],
         icons: [
           { src: 'icono-192.png', sizes: '192x192', type: 'image/png' },
           { src: 'icono-512.png', sizes: '512x512', type: 'image/png' },
+          { src: 'icono-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
     }),

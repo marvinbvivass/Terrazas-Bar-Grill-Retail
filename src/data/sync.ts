@@ -37,7 +37,7 @@ export interface Transporte {
  * Transporte de mentira mientras no exista el backend.
  *
  * Deja la cola intacta a propósito: así se puede ver el contador de pendientes
- * subir mientras se carga el cuaderno, que es justo el comportamiento que hay
+ * subir mientras se carga el día, que es justo el comportamiento que hay
  * que probar antes de conectar nada.
  */
 export const transporteLocal: Transporte = {

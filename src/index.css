@@ -1,8 +1,9 @@
 @import 'tailwindcss';
 
 /*
- * Tema de caja: contraste alto y objetivos grandes.
- * La pantalla se opera de pie, con prisa y a veces con las manos mojadas.
+ * Tema de la aplicación: fondo oscuro, contraste alto y objetivos grandes.
+ * Se opera de pie, con prisa y a veces con las manos mojadas, sobre un
+ * teléfono o una tablet Android sostenida con una sola mano.
  */
 @theme {
   --color-fondo: #0e1512;
@@ -37,13 +38,56 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   overscroll-behavior: none;
+  /* Instalada, la aplicación pinta bajo la barra de estado y la de gestos.
+     Estas variables son el hueco real que deja cada teléfono. */
+  --arriba: env(safe-area-inset-top, 0px);
+  --abajo: env(safe-area-inset-bottom, 0px);
 }
 
-/* La caja se toca, no se selecciona */
+/* Nada de rebote elástico ni de arrastrar la página entera: dentro de la
+   aplicación solo se desplazan las listas, nunca el marco. */
+html,
+body {
+  overflow: hidden;
+  position: fixed;
+  inset: 0;
+  width: 100%;
+}
+
+.pad-arriba {
+  padding-top: var(--arriba);
+}
+.pad-abajo {
+  padding-bottom: var(--abajo);
+}
+
+/* Listas que se desplazan con el dedo, con inercia en Android. */
+.scroll-y {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+/* Se toca, no se selecciona */
 button {
   -webkit-tap-highlight-color: transparent;
   user-select: none;
   cursor: pointer;
+  /* Objetivo mínimo cómodo con el pulgar. Android recomienda 48dp. */
+  min-height: 44px;
+}
+
+/*
+ * Los campos van a 16px como mínimo a propósito.
+ *
+ * Por debajo de 16px, Chrome en Android hace zoom automático al enfocar un
+ * campo y deja la pantalla descuadrada: el usuario escribe una cantidad y la
+ * aplicación se le queda ampliada. No es un capricho de tamaño de letra.
+ */
+input,
+select,
+textarea {
+  font-size: 16px;
 }
 
 button:focus-visible,
@@ -54,6 +98,13 @@ input:focus-visible {
 
 .tabular {
   font-variant-numeric: tabular-nums;
+}
+
+/* En pantalla táctil la barra de desplazamiento roba ancho y no se usa. */
+@media (pointer: coarse) {
+  ::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 ::-webkit-scrollbar {

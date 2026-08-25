@@ -7,6 +7,7 @@ import type {
   Existencia,
   ListaPrecio,
   MetodoPago,
+  MonedaCodigo,
   DiaNegocio,
   MovimientoInventario,
   Precio,
@@ -17,7 +18,7 @@ import type {
   UUID,
   Venta,
 } from '../domain/types'
-import { TASA_VES_INICIAL, configuracionInicial } from './seed'
+import { METODOS_PAGO, TASA_COP_INICIAL, TASA_VES_INICIAL, configuracionInicial } from './seed'
 
 /**
  * Réplica local. Es de donde lee la caja SIEMPRE, haya o no señal.
@@ -122,9 +123,39 @@ export async function pedirAlmacenamientoPersistente(): Promise<boolean> {
  * Ni un producto, ni un cliente. El catálogo lo carga el encargado y los
  * clientes de fiado aparecen al fiar la primera venta.
  */
+/**
+ * Piezas que se agregaron DESPUÉS de que alguien ya tuviera la aplicación
+ * instalada.
+ *
+ * `prepararConfiguracion` se planta si ya hay listas, así que una instalación
+ * vieja nunca vería un método de pago nuevo ni la tasa de una moneda nueva: se
+ * quedaría sin poder cobrar en pesos y sin explicación visible. Esto rellena
+ * solo lo que falta y no toca lo que el usuario ya haya editado.
+ */
+async function completarPiezasNuevas(): Promise<void> {
+  const metodos = await db.metodosPago.toArray()
+  const conocidos = new Set(metodos.map((m) => m.id))
+  const faltantes = METODOS_PAGO.filter((m) => !conocidos.has(m.id))
+  if (faltantes.length > 0) await db.metodosPago.bulkPut(faltantes)
+
+  const tasas = await db.tasas.toArray()
+  const conTasa = new Set(tasas.map((t) => t.moneda))
+  const nuevas: Array<TasaCambio & { id: string }> = []
+  if (!conTasa.has('VES')) {
+    nuevas.push({ id: 'VES', moneda: 'VES', tasa: TASA_VES_INICIAL, fecha: Date.now(), fuente: 'manual' })
+  }
+  if (!conTasa.has('COP')) {
+    nuevas.push({ id: 'COP', moneda: 'COP', tasa: TASA_COP_INICIAL, fecha: Date.now(), fuente: 'manual' })
+  }
+  if (nuevas.length > 0) await db.tasas.bulkPut(nuevas)
+}
+
 export async function prepararConfiguracion(): Promise<void> {
   const yaHay = await db.listas.count()
-  if (yaHay > 0) return
+  if (yaHay > 0) {
+    await completarPiezasNuevas()
+    return
+  }
 
   const c = configuracionInicial()
   await db.transaction(
@@ -137,6 +168,7 @@ export async function prepararConfiguracion(): Promise<void> {
       await db.metodosPago.bulkPut(c.metodosPago)
       await db.tasas.bulkPut([
         { id: 'VES', moneda: 'VES', tasa: TASA_VES_INICIAL, fecha: Date.now(), fuente: 'manual' },
+        { id: 'COP', moneda: 'COP', tasa: TASA_COP_INICIAL, fecha: Date.now(), fuente: 'manual' },
       ])
       await db.config.bulkPut([
         { clave: 'usuarioId', valor: 'usuario-demo' },
@@ -401,8 +433,8 @@ export async function pendientesDeSubir(): Promise<number> {
   return db.outbox.count()
 }
 
-export async function guardarTasa(moneda: string, tasa: number): Promise<void> {
-  await db.tasas.put({ id: moneda, moneda: moneda as 'VES', tasa, fecha: Date.now(), fuente: 'manual' })
+export async function guardarTasa(moneda: MonedaCodigo, tasa: number): Promise<void> {
+  await db.tasas.put({ id: moneda, moneda, tasa, fecha: Date.now(), fuente: 'manual' })
 }
 
 /** Solo para desarrollo: vacía la base y vuelve a sembrar. */

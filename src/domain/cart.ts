@@ -310,9 +310,9 @@ export function estaPagado(carrito: Carrito): boolean {
 // ---------------------------------------------------------------------------
 
 export interface DatosVenta {
-  /** Día de negocio al que pertenece: el del cuaderno, no el de hoy */
+  /** Día de negocio al que pertenece: el que eligió el usuario, no el de hoy */
   dia: DiaNegocio
-  /** Cuándo ocurrió la venta según el cuaderno */
+  /** Cuándo ocurrió la venta */
   fecha: number
   usuarioId: UUID
   folioProvisional: string

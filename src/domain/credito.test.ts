@@ -83,7 +83,7 @@ describe('venta a crédito', () => {
     expect(v.costoTotal).toBe(7.2) // 12 × 0,60
   })
 
-  it('separa el día del cuaderno de cuándo se tecleó', () => {
+  it('separa el día de trabajo de cuándo se tecleó', () => {
     const v = fiar(JUAN.id, '2026-08-10', 3)
     expect(v.dia).toBe('2026-08-10')
     expect(v.registradaEn).toBeGreaterThan(v.fecha) // se cargó después

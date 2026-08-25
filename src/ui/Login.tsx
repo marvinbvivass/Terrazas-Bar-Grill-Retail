@@ -36,7 +36,7 @@ export function Login({ sinConexion }: { sinConexion: boolean }) {
         onSubmit={(e) => void enviar(e)}
         className="w-full max-w-sm rounded-xl border border-linea bg-panel p-6"
       >
-        <p className="font-mono text-[10px] tracking-[0.16em] text-apagado uppercase">Licorería</p>
+        <p className="font-mono text-[10px] tracking-[0.16em] text-cobre2 uppercase">Terrazas Bar Grill</p>
         <h1 className="mt-1 mb-5 text-2xl font-bold">Entrar al sistema</h1>
 
         {sinConexion && (

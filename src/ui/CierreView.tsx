@@ -10,7 +10,7 @@ import type { Pos } from '../hooks/usePos'
  * distintas y mezclarlas es lo que hace que un negocio crea que vendió más de
  * lo que cobró:
  *
- *   ENTRÓ EN CAJA   contado del día + cobros de fiados viejos.
+ *   ENTRÓ EN CAJA   contado del día + cobros de créditos viejos.
  *                   Es contra esto que se cuenta la gaveta.
  *
  *   SE VENDIÓ       contado del día + lo que se fio hoy.
@@ -37,7 +37,7 @@ export function CierreView({ pos }: { pos: Pos }) {
         {sinMovimiento ? (
           <div className="rounded-xl border border-linea bg-panel px-6 py-10 text-center">
             <p className="text-[15px] text-apagado">
-              No hay nada cargado en este día. Ve al cuaderno y transcribe las ventas.
+              No hay nada cargado en este día. Ve a Venta y carga lo que se vendió.
             </p>
           </div>
         ) : (
@@ -61,7 +61,7 @@ export function CierreView({ pos }: { pos: Pos }) {
                     valor={formato(c.contado, 'USD')}
                   />
                   <Fila
-                    etiqueta={`Cobros de fiado · ${c.numCobros} cobro${c.numCobros === 1 ? '' : 's'}`}
+                    etiqueta={`Cobros de CXC · ${c.numCobros} cobro${c.numCobros === 1 ? '' : 's'}`}
                     valor={formato(c.cobrosCredito, 'USD')}
                     tono={c.cobrosCredito > 0 ? 'cobre' : undefined}
                   />
@@ -88,15 +88,15 @@ export function CierreView({ pos }: { pos: Pos }) {
                 <div className="mt-4 space-y-1 border-t border-linea pt-3">
                   <Fila etiqueta="Contado del día" valor={formato(c.contado, 'USD')} />
                   <Fila
-                    etiqueta={`Fiado hoy · ${c.numVentasCredito} venta${c.numVentasCredito === 1 ? '' : 's'}`}
-                    valor={formato(c.fiadoHoy, 'USD')}
-                    tono={c.fiadoHoy > 0 ? 'ambar' : undefined}
+                    etiqueta={`A crédito hoy · ${c.numVentasCredito} venta${c.numVentasCredito === 1 ? '' : 's'}`}
+                    valor={formato(c.creditoHoy, 'USD')}
+                    tono={c.creditoHoy > 0 ? 'ambar' : undefined}
                   />
                   <Fila etiqueta="Costo de lo vendido" valor={formato(c.costoVendido, 'USD')} />
                   <Fila etiqueta="Margen bruto" valor={formato(c.margen, 'USD')} tono="verde" fuerte />
                 </div>
                 <p className="mt-3 text-[12px] leading-snug text-apagado">
-                  Incluye lo fiado: la mercancía salió aunque la plata no haya entrado.
+                  Incluye lo dado a crédito: la mercancía salió aunque la plata no haya entrado.
                 </p>
               </section>
             </div>
@@ -159,14 +159,14 @@ export function CierreView({ pos }: { pos: Pos }) {
             <section className="mt-4 grid gap-4 lg:grid-cols-2">
               <div className="rounded-xl border border-linea bg-panel p-5">
                 <p className="font-mono text-[10px] tracking-[0.14em] text-apagado uppercase">
-                  Fiado por cobrar, en total
+                  Cuentas por cobrar, en total
                 </p>
                 <p className="tabular mt-1 text-2xl font-bold text-cobre2">
                   {formato(c.carteraAlCierre, 'USD')}
                 </p>
                 <p className="mt-1 text-[12px] text-apagado">
-                  {c.fiadoHoy > 0 ? (
-                    <>Hoy se fiaron {formato(c.fiadoHoy, 'USD')} más.</>
+                  {c.creditoHoy > 0 ? (
+                    <>Hoy se dieron {formato(c.creditoHoy, 'USD')} más a crédito.</>
                   ) : (
                     <>Hoy no se fio nada.</>
                   )}

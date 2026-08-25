@@ -71,13 +71,21 @@ export const CONTEXTO_CATALOGO = {
 export const METODOS_PAGO: MetodoPago[] = [
   { id: 'mp-efectivo-usd', nombre: 'Efectivo $', moneda: 'USD', aplicaIgtf: true, requiereReferencia: false, esEfectivo: true, activo: true },
   { id: 'mp-efectivo-bs', nombre: 'Efectivo Bs', moneda: 'VES', aplicaIgtf: false, requiereReferencia: false, esEfectivo: true, activo: true },
+  { id: 'mp-efectivo-cop', nombre: 'Efectivo pesos', moneda: 'COP', aplicaIgtf: false, requiereReferencia: false, esEfectivo: true, activo: true },
   { id: 'mp-pago-movil', nombre: 'Pago Móvil', moneda: 'VES', aplicaIgtf: false, requiereReferencia: true, esEfectivo: false, activo: true },
   { id: 'mp-punto', nombre: 'Punto de venta', moneda: 'VES', aplicaIgtf: false, requiereReferencia: true, esEfectivo: false, activo: true },
   { id: 'mp-zelle', nombre: 'Zelle', moneda: 'USD', aplicaIgtf: true, requiereReferencia: true, esEfectivo: false, activo: true },
 ]
 
-/** Tasa de arranque. Se cambia desde la barra superior el primer día. */
+/*
+ * Tasas de arranque, una por moneda que no sea el dólar.
+ *
+ * Valen 1 a propósito: una tasa inventada es peor que ninguna, porque el
+ * primer día alguien cobraría con ella sin darse cuenta. Con 1 el número se
+ * ve absurdo en pantalla y obliga a cargarla antes de vender.
+ */
 export const TASA_VES_INICIAL = 1
+export const TASA_COP_INICIAL = 1
 
 export interface ConfiguracionInicial {
   categorias: Categoria[]

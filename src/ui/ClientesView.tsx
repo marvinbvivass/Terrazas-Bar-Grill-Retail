@@ -5,85 +5,199 @@ import { MONEDAS, convertir, formato, formatoNumero, parsearMonto } from '../dom
 import { textoCorto } from '../domain/dias'
 import type { MetodoPago, Pago, UUID } from '../domain/types'
 import type { Pos } from '../hooks/usePos'
+import { Hoja } from './Hoja'
 
 /**
- * Fiado: quién debe, cuánto, desde cuándo, y cómo se cobra.
+ * CXC · cuentas por cobrar: quién debe, cuánto, desde cuándo, y cómo se cobra.
  *
  * Un abono se reparte de la venta más vieja a la más nueva, que es como
  * funciona una cuenta de bodega. Si el cliente quiere pagar una venta concreta,
  * se marcan a mano y el reparto se limita a esas.
  */
 export function ClientesView({ pos }: { pos: Pos }) {
-  const [seleccionado, setSeleccionado] = useState<UUID | null>(
-    pos.resumenClientes.find((r) => r.saldo > 0)?.cliente.id ?? null,
-  )
+  const [abierto, setAbierto] = useState<UUID | null>(null)
+  const [creando, setCreando] = useState(false)
 
   const resumen = pos.resumenClientes
-  const activo = resumen.find((r) => r.cliente.id === seleccionado) ?? resumen[0] ?? null
+  const activo = resumen.find((r) => r.cliente.id === abierto) ?? null
+
+  /*
+   * Lista o detalle, nunca los dos a la vez.
+   *
+   * La versión anterior ponía una columna de 340 px al lado del detalle, que
+   * en un teléfono en vertical no cabe: dejaba el detalle en unos 40 px de
+   * ancho. En móvil el patrón es entrar y volver.
+   */
+  if (activo) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <button
+          onClick={() => setAbierto(null)}
+          className="flex shrink-0 items-center gap-1.5 border-b border-linea bg-panel px-3 py-2 text-left text-[14px] text-tinta2"
+        >
+          <span className="text-[18px] leading-none">‹</span> Todas las cuentas
+        </button>
+        <CuentaCliente key={activo.cliente.id} pos={pos} clienteId={activo.cliente.id} />
+      </div>
+    )
+  }
 
   return (
-    <div className="flex min-h-0 flex-1">
-      {/* Lista de clientes */}
-      <div className="flex w-[340px] shrink-0 flex-col border-r border-linea">
-        <div className="flex items-baseline justify-between border-b border-linea px-4 py-3">
-          <span className="font-mono text-[10px] tracking-[0.16em] text-apagado uppercase">
-            Por cobrar
-          </span>
-          <span className="tabular text-lg font-bold text-cobre2">
-            {formato(pos.carteraTotal, 'USD')}
-          </span>
-        </div>
-
-        <ul className="min-h-0 flex-1 overflow-y-auto">
-          {resumen.map((r) => (
-            <li key={r.cliente.id}>
-              <button
-                onClick={() => setSeleccionado(r.cliente.id)}
-                className={`w-full border-b border-linea px-4 py-3 text-left transition-colors ${
-                  activo?.cliente.id === r.cliente.id ? 'bg-panel2' : 'hover:bg-panel/60'
-                }`}
-              >
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="truncate text-[14px] font-semibold">{r.cliente.nombre}</span>
-                  <span
-                    className={`tabular text-[14px] font-bold ${
-                      r.saldo > 0 ? 'text-cobre2' : 'text-apagado'
-                    }`}
-                  >
-                    {formato(r.saldo, 'USD')}
-                  </span>
-                </div>
-                <p className="mt-0.5 flex items-center gap-1.5 font-mono text-[10px] text-apagado">
-                  {r.saldo > 0 ? (
-                    <>
-                      <span>
-                        {r.ventasAbiertas} venta{r.ventasAbiertas > 1 ? 's' : ''}
-                      </span>
-                      {r.masVieja > 0 && <span>· más vieja {r.masVieja} d</span>}
-                    </>
-                  ) : (
-                    <span>al día</span>
-                  )}
-                  {r.sobreLimite && (
-                    <span className="rounded bg-ambar/15 px-1.5 py-px tracking-wider text-ambar uppercase">
-                      pasó el tope
-                    </span>
-                  )}
-                </p>
-              </button>
-            </li>
-          ))}
-        </ul>
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex shrink-0 items-baseline justify-between border-b border-linea bg-panel px-4 py-3">
+        <span className="font-mono text-[10px] tracking-[0.16em] text-apagado uppercase">
+          Por cobrar
+        </span>
+        <span className="tabular text-[19px] font-bold text-cobre2">
+          {formato(pos.carteraTotal, 'USD')}
+        </span>
       </div>
 
-      {activo ? (
-        <CuentaCliente key={activo.cliente.id} pos={pos} clienteId={activo.cliente.id} />
-      ) : (
-        <div className="flex flex-1 items-center justify-center">
-          <p className="text-sm text-apagado">Todavía no hay clientes de confianza registrados.</p>
-        </div>
-      )}
+      <ul className="scroll-y min-h-0 flex-1">
+        {resumen.length === 0 && (
+          <li className="px-4 py-10 text-center text-[14px] leading-relaxed text-apagado">
+            Todavía no hay clientes con crédito.
+            <br />
+            Créalos aquí y después cárgales ventas desde Venta → A crédito.
+          </li>
+        )}
+        {resumen.map((r) => (
+          <li key={r.cliente.id}>
+            <button
+              onClick={() => setAbierto(r.cliente.id)}
+              className="w-full border-b border-linea px-4 py-3 text-left"
+            >
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="truncate text-[15px] font-semibold">{r.cliente.nombre}</span>
+                <span
+                  className={`tabular text-[15px] font-bold ${
+                    r.saldo > 0 ? 'text-cobre2' : 'text-apagado'
+                  }`}
+                >
+                  {formato(r.saldo, 'USD')}
+                </span>
+              </div>
+              <p className="mt-0.5 flex items-center gap-1.5 font-mono text-[10.5px] text-apagado">
+                {r.saldo > 0 ? (
+                  <>
+                    <span>
+                      {r.ventasAbiertas} venta{r.ventasAbiertas > 1 ? 's' : ''}
+                    </span>
+                    {r.masVieja > 0 && <span>· más vieja {r.masVieja} d</span>}
+                  </>
+                ) : (
+                  <span>al día</span>
+                )}
+                {r.sobreLimite && (
+                  <span className="rounded bg-ambar/15 px-1.5 py-px tracking-wider text-ambar uppercase">
+                    pasó el tope
+                  </span>
+                )}
+              </p>
+            </button>
+          </li>
+        ))}
+      </ul>
+
+      <div className="shrink-0 border-t border-linea bg-panel px-3 py-2.5">
+        <button
+          onClick={() => setCreando(true)}
+          className="w-full rounded-xl border border-cobre py-3 text-[15px] font-bold text-cobre2"
+        >
+          + Nuevo cliente
+        </button>
+      </div>
+
+      {creando && <HojaNuevoCliente pos={pos} onCerrar={() => setCreando(false)} />}
     </div>
+  )
+}
+
+/**
+ * Alta de cliente.
+ *
+ * Solo el nombre es obligatorio. Pedir cédula y teléfono para poder fiarle a
+ * alguien que está esperando en el mostrador es la forma segura de que nadie
+ * registre a nadie y las deudas vuelvan al papel.
+ */
+function HojaNuevoCliente({ pos, onCerrar }: { pos: Pos; onCerrar: () => void }) {
+  const [nombre, setNombre] = useState('')
+  const [telefono, setTelefono] = useState('')
+  const [tope, setTope] = useState('')
+  const [guardando, setGuardando] = useState(false)
+
+  async function guardar() {
+    const limpio = nombre.trim()
+    if (limpio === '') return
+    setGuardando(true)
+    await pos.crearCliente({
+      nombre: limpio,
+      documento: null,
+      telefono: telefono.trim() || null,
+      limiteCredito: parsearMonto(tope),
+      nota: null,
+    })
+    setGuardando(false)
+    onCerrar()
+  }
+
+  return (
+    <Hoja
+      titulo="Nuevo cliente"
+      onCerrar={onCerrar}
+      pie={
+        <button
+          onClick={() => void guardar()}
+          disabled={guardando || nombre.trim() === ''}
+          className="w-full rounded-xl bg-cobre py-3.5 text-[16px] font-bold text-fondo disabled:opacity-40"
+        >
+          {guardando ? 'Guardando…' : 'Crear cliente'}
+        </button>
+      }
+    >
+      <div className="flex flex-col gap-3 py-1">
+        <Campo etiqueta="Nombre" valor={nombre} onCambio={setNombre} autoFocus />
+        <Campo etiqueta="Teléfono (opcional)" valor={telefono} onCambio={setTelefono} tipo="tel" />
+        <Campo
+          etiqueta="Tope de crédito en $ (opcional)"
+          valor={tope}
+          onCambio={setTope}
+          tipo="decimal"
+        />
+        <p className="text-[12.5px] leading-relaxed text-apagado">
+          El tope solo avisa cuando se pasa; no bloquea la venta.
+        </p>
+      </div>
+    </Hoja>
+  )
+}
+
+function Campo({
+  etiqueta,
+  valor,
+  onCambio,
+  tipo,
+  autoFocus,
+}: {
+  etiqueta: string
+  valor: string
+  onCambio: (v: string) => void
+  tipo?: 'tel' | 'decimal'
+  autoFocus?: boolean
+}) {
+  return (
+    <label className="flex flex-col gap-1.5">
+      <span className="font-mono text-[10.5px] tracking-[0.12em] text-apagado uppercase">
+        {etiqueta}
+      </span>
+      <input
+        value={valor}
+        onChange={(e) => onCambio(e.target.value)}
+        autoFocus={autoFocus}
+        inputMode={tipo === 'decimal' ? 'decimal' : tipo === 'tel' ? 'tel' : 'text'}
+        className="rounded-xl border border-linea bg-panel2 px-3 py-3 focus:border-cobre"
+      />
+    </label>
   )
 }
 

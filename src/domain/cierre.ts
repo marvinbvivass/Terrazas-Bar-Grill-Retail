@@ -46,8 +46,8 @@ export interface Cierre {
 
   // --- Lo que se vendió -----------------------------------------------------
   /** Ventas a crédito otorgadas hoy: salió mercancía, no entró plata */
-  fiadoHoy: number
-  /** contado + fiadoHoy */
+  creditoHoy: number
+  /** contado + creditoHoy */
   vendidoHoy: number
   costoVendido: number
   /** vendidoHoy − costoVendido */
@@ -83,7 +83,7 @@ export function calcularCierre(entrada: EntradaCierre): Cierre {
   const cobrosDelDia = abonos.filter((a) => a.dia === dia)
 
   const contado = contadoDelDia.reduce((s, v) => redondear(s + v.total, 2), 0)
-  const fiadoHoy = creditoDelDia.reduce((s, v) => redondear(s + v.total, 2), 0)
+  const creditoHoy = creditoDelDia.reduce((s, v) => redondear(s + v.total, 2), 0)
   const cobrosCredito = cobrosDelDia.reduce((s, a) => redondear(s + a.monto, 2), 0)
 
   // Desglose por método: los pagos de las ventas de contado y los de los cobros
@@ -121,7 +121,7 @@ export function calcularCierre(entrada: EntradaCierre): Cierre {
 
   const igtf = porMetodo.reduce((s, d) => redondear(s + d.igtf, 2), 0)
 
-  // Inventario y margen: cuenta TODO lo que salió hoy, fiado incluido
+  // Inventario y margen: cuenta TODO lo que salió hoy, el crédito incluido
   const salidasDelDia = [...contadoDelDia, ...creditoDelDia]
   const costoVendido = salidasDelDia.reduce((s, v) => redondear(s + v.costoTotal, 2), 0)
   const ivaVentas = salidasDelDia.reduce((s, v) => redondear(s + v.iva, 2), 0)
@@ -130,7 +130,7 @@ export function calcularCierre(entrada: EntradaCierre): Cierre {
     0,
   )
 
-  const vendidoHoy = redondear(contado + fiadoHoy, 2)
+  const vendidoHoy = redondear(contado + creditoHoy, 2)
 
   return {
     dia,
@@ -140,7 +140,7 @@ export function calcularCierre(entrada: EntradaCierre): Cierre {
     igtf,
     porMetodo,
     porMoneda: [...porMonedaMapa.entries()].map(([moneda, monto]) => ({ moneda, monto })),
-    fiadoHoy,
+    creditoHoy,
     vendidoHoy,
     costoVendido,
     margen: redondear(vendidoHoy - costoVendido, 2),
