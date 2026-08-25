@@ -25,6 +25,16 @@
         ]
       },
       {
+        "//": "La raiz va aparte de /index.html a proposito: Firebase compara la cabecera contra la RUTA PEDIDA, y la caja abre '/' (es el start_url del PWA), no '/index.html'. Con solo la regla de abajo, el HTML de la caja se servia con max-age=3600 y una version nueva tardaba hasta una hora en llegar.",
+        "source": "/",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      },
+      {
         "source": "/index.html",
         "headers": [
           {
