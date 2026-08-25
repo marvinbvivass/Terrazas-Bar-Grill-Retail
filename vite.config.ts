@@ -48,6 +48,28 @@ export default defineConfig({
       },
     }),
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        // Separar el SDK de Firebase del código propio: cambia mucho menos, así
+        // que se queda cacheado entre despliegues en vez de rebajarse entero.
+        manualChunks(id) {
+          // Firestore aparte de Auth: el arranque solo necesita Auth, y
+          // Firestore puede seguir bajando mientras el encargado ya carga.
+          if (id.includes('@firebase/firestore') || id.includes('firebase/firestore')) {
+            return 'firebase-firestore'
+          }
+          if (id.includes('node_modules/firebase') || id.includes('node_modules/@firebase')) {
+            return 'firebase-auth'
+          }
+          if (id.includes('node_modules/react') || id.includes('node_modules/scheduler')) {
+            return 'react'
+          }
+          return undefined
+        },
+      },
+    },
+  },
   test: {
     environment: 'node',
     include: ['src/**/*.test.ts'],

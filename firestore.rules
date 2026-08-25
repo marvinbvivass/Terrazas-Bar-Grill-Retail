@@ -1,0 +1,83 @@
+rules_version = '2';
+
+// =============================================================================
+//  Reglas de Firestore · proyecto ventas-9a210
+//
+//  ⚠️  LAS REGLAS SON DEL PROYECTO ENTERO, NO DE UNA APLICACIÓN.
+//
+//  En este proyecto conviven dos aplicaciones: la licorería (colecciones de
+//  arriba) y la vieja `dist-castillo` (bloque "heredado" de abajo). Desplegar
+//  estas reglas sin el bloque heredado dejaría a la aplicación vieja sin poder
+//  leer ni escribir nada, aunque su hosting siga en pie.
+//
+//  Ese bloque se puede borrar el día que se confirme que ya nadie usa la
+//  aplicación vieja, y no antes.
+//
+//  La apiKey que va en el código del navegador NO protege nada: es pública por
+//  diseño. Lo único que separa los datos del local de cualquiera que abra la
+//  URL es este archivo.
+// =============================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function sesion() {
+      return request.auth != null;
+    }
+
+    // ---------------------------------------------------------------------
+    // Licorería · catálogo y configuración
+    // ---------------------------------------------------------------------
+    match /productos/{id}      { allow read, write: if sesion(); }
+    match /presentaciones/{id} { allow read, write: if sesion(); }
+    match /codigos/{id}        { allow read, write: if sesion(); }
+    match /categorias/{id}     { allow read, write: if sesion(); }
+    match /listas/{id}         { allow read, write: if sesion(); }
+    match /precios/{id}        { allow read, write: if sesion(); }
+    match /ubicaciones/{id}    { allow read, write: if sesion(); }
+    match /metodosPago/{id}    { allow read, write: if sesion(); }
+    match /existencias/{id}    { allow read, write: if sesion(); }
+    match /config/{id}         { allow read, write: if sesion(); }
+
+    // Los clientes de fiado llevan nombre, teléfono y deuda: nunca públicos.
+    match /clientes/{id}       { allow read, write: if sesion(); }
+
+    // ---------------------------------------------------------------------
+    // Licorería · movimiento comercial
+    //
+    // Nada de esto se borra. Anular una venta es cambiarle el estado, no
+    // hacerla desaparecer: si una venta puede borrarse, el cierre de un día
+    // pasado puede cambiar sin que quede rastro de quién lo cambió.
+    // ---------------------------------------------------------------------
+    match /ventas/{id} {
+      allow read:   if sesion();
+      allow create: if sesion();
+      allow update: if sesion();
+      allow delete: if false;
+    }
+
+    match /abonos/{id} {
+      allow read:   if sesion();
+      allow create: if sesion();
+      // Un cobro no se edita. Si estuvo mal, se corrige con otro movimiento.
+      allow update, delete: if false;
+    }
+
+    match /movimientos/{id} {
+      allow read:   if sesion();
+      allow create: if sesion();
+      allow update, delete: if false;
+    }
+
+    // ---------------------------------------------------------------------
+    // Heredado · dist-castillo
+    // Mantener mientras esa aplicación siga en uso. Ver el aviso de arriba.
+    // ---------------------------------------------------------------------
+    match /users/{uid} {
+      allow read: if sesion();
+      allow write: if sesion() && request.auth.uid == uid;
+    }
+    match /artifacts/{resto=**}    { allow read, write: if sesion(); }
+    match /public_data/{resto=**}  { allow read, write: if sesion(); }
+  }
+}

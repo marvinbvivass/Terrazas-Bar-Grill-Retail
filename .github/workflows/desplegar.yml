@@ -50,5 +50,4 @@ jobs:
           # Nunca hay que copiarlo ni pegarlo a mano en ningún lado.
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_VENTAS_9A210 }}
           projectId: ventas-9a210
-          target: licoreria
           channelId: live

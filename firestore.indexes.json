@@ -1,0 +1,5 @@
+{
+  "//": "Las consultas de la aplicación filtran por un solo campo ('dia'), que Firestore indexa solo. Aquí solo van los índices compuestos que hagan falta más adelante, por ejemplo reportes por cliente y fecha.",
+  "indexes": [],
+  "fieldOverrides": []
+}

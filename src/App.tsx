@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { usePos } from './hooks/usePos'
+import { useSesion } from './hooks/useSesion'
+import { Login } from './ui/Login'
 import { TopBar, type Vista } from './ui/TopBar'
 import { ProductGrid } from './ui/ProductGrid'
 import { CartPanel } from './ui/CartPanel'
@@ -9,6 +11,24 @@ import { ClientesView } from './ui/ClientesView'
 import { CierreView } from './ui/CierreView'
 
 export function App() {
+  const sesion = useSesion()
+
+  if (sesion.cargando) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <p className="font-mono text-sm text-apagado">Verificando la sesión…</p>
+      </div>
+    )
+  }
+
+  // La aplicación no se monta sin sesión: las reglas de Firestore rechazarían
+  // cada lectura y la caja se llenaría de errores en vez de pedir la clave.
+  if (!sesion.usuario) return <Login sinConexion={!navigator.onLine} />
+
+  return <Caja />
+}
+
+function Caja() {
   const pos = usePos()
   const [vista, setVista] = useState<Vista>('cuaderno')
   const [hoja, setHoja] = useState<'ninguna' | 'contado' | 'fiar'>('ninguna')

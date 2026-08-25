@@ -1,6 +1,6 @@
 {
+  "//": "El hosting apunta al sitio POR DEFECTO de ventas-9a210: reemplaza la aplicación de dist-castillo, que es lo acordado.",
   "hosting": {
-    "target": "licoreria",
     "public": "dist",
     "ignore": [
       "firebase.json",
@@ -72,5 +72,9 @@
         ]
       }
     ]
+  },
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
   }
 }

@@ -1,65 +1,89 @@
 # Subir a GitHub y desplegar en Firebase
 
-Todo lo de aquí se corre **en tu máquina**, desde la carpeta del proyecto. Son
-cinco minutos la primera vez y después se despliega solo con cada `git push`.
+Todo lo de aquí se corre **en tu máquina**. Son unos diez minutos la primera
+vez y después se despliega solo con cada `git push`.
 
 ---
 
-## ⚠️ Antes de nada: no pises la aplicación vieja
+## ⚠️ Dos avisos antes de empezar
 
-El proyecto de Firebase `ventas-9a210` ya tiene desplegada la aplicación de
-`dist-castillo`. Si despliegas sobre el sitio por defecto, **la reemplazas**, y
-si todavía hay alguien usándola se queda sin sistema.
+**1. Esto reemplaza la aplicación vieja.** El hosting apunta al sitio por
+defecto de `ventas-9a210`, así que al desplegar, la aplicación de
+`dist-castillo` deja de estar en esa URL. Es lo acordado, pero si todavía hay
+alguien usándola, avísale antes.
 
-Por eso la configuración apunta a un **sitio nuevo dentro del mismo proyecto**,
-no al de siempre. Los datos de Firestore no se tocan en ninguno de los dos
-casos: esta aplicación todavía no usa Firestore, guarda todo en el navegador.
+**2. Las reglas de Firestore son del proyecto entero.** El archivo
+`firestore.rules` incluye a propósito un bloque «heredado» con las rutas de la
+aplicación vieja (`artifacts/**`, `public_data/**`, `users/**`). Si lo borras y
+despliegas, la aplicación vieja se queda sin poder leer ni escribir nada aunque
+siga instalada en el teléfono de alguien. Bórralo el día que confirmes que ya
+nadie la usa, no antes.
 
----
-
-## 1 · Crear el sitio de hosting
-
-```bash
-npm install -g firebase-tools
-firebase login
-firebase hosting:sites:create licoreria-castillo
-```
-
-Si ese nombre está tomado, elige otro. La URL queda
-`https://EL-NOMBRE-QUE-ELIJAS.web.app`.
-
-Después abre `.firebaserc` y reemplaza `CAMBIAR-POR-EL-ID-DEL-SITIO` por ese
-mismo nombre:
-
-```json
-"licoreria": ["licoreria-castillo"]
-```
-
-Y enlaza el destino:
-
-```bash
-firebase target:apply hosting licoreria licoreria-castillo
-```
+Los datos que ya están en Firestore no se tocan en ningún caso: la licorería
+escribe en colecciones nuevas (`ventas`, `abonos`, `productos`…), no en las
+viejas.
 
 ---
 
-## 2 · Primer despliegue a mano
+## 1 · Crear la cuenta de acceso
+
+La aplicación ahora pide correo y contraseña, y **no tiene registro abierto** a
+propósito: si cualquiera pudiera crearse una cuenta, cualquiera podría ver las
+ventas del local y las deudas de los clientes.
+
+En la consola de Firebase → **Authentication** → *Sign-in method*, habilita
+**Correo electrónico/contraseña** si no lo está. Después, en la pestaña
+**Users** → *Add user*, crea la cuenta del encargado.
+
+Anota esos datos: son los que se usan para entrar.
+
+---
+
+## 2 · Desplegar
 
 ```bash
 npm install
 npm test
 npm run build
-firebase deploy --only hosting:licoreria
+
+npm install -g firebase-tools
+firebase login
+firebase deploy
 ```
 
-Al terminar te da la URL. Ábrela en el teléfono y en la computadora del local:
-la aplicación funciona completa, sin conexión incluida.
+Ese `firebase deploy` sube tres cosas: el sitio, las reglas de Firestore y los
+índices. Al terminar te da la URL (`https://ventas-9a210.web.app`).
+
+Si prefieres ir por partes:
+
+```bash
+firebase deploy --only firestore:rules   # primero las reglas
+firebase deploy --only hosting           # después el sitio
+```
 
 ---
 
-## 3 · Subir a GitHub
+## 3 · Primera entrada
 
-Crea un repositorio **vacío** en GitHub (sin README ni .gitignore, porque este
+Abre la URL, entra con la cuenta que creaste, y espera unos segundos.
+
+La primera sincronización encuentra Firestore vacío y **sube sola el catálogo
+de ejemplo**: los 40 productos, sus presentaciones, códigos, precios,
+existencias y los cuatro clientes de prueba. A partir de ahí, cualquier otro
+dispositivo que entre con la misma cuenta ve lo mismo.
+
+Esa siembra solo ocurre si arriba no hay ni un producto. Cuando cargues los
+productos de verdad, no vuelve a correr.
+
+En la barra superior, a la derecha, hay un indicador que dice **Al día**,
+**N por subir**, **Subiendo…** o **Sin señal**. Se puede tocar para forzar una
+sincronización.
+
+---
+
+## 4 · Subir a GitHub
+
+Crea un repositorio **vacío** en GitHub (sin README ni .gitignore: este
 proyecto ya trae los suyos y el historial ya está hecho). Después:
 
 ```bash
@@ -68,73 +92,77 @@ git branch -M main
 git push -u origin main
 ```
 
-Te va a pedir usuario y contraseña: la contraseña es un token personal de
-GitHub, y **se queda en tu máquina**. No hace falta que me lo pases.
-
 ---
 
-## 4 · Que se despliegue solo con cada push
+## 5 · Que se despliegue solo con cada push
 
 ```bash
 firebase init hosting:github
 ```
 
-Este comando hace tres cosas por su cuenta: crea una cuenta de servicio en
-Google, guarda su credencial como secreto del repositorio en GitHub, y conecta
-los dos. **La credencial nunca pasa por un chat ni por un archivo tuyo.**
+Crea una cuenta de servicio, la guarda como secreto del repositorio y conecta
+las dos cosas. **La credencial nunca pasa por un chat ni por un archivo tuyo.**
 
-Cuando pregunte si quiere sobrescribir el workflow, responde **que no**: el que
-está en `.github/workflows/desplegar.yml` ya corre los tipos y las 80 pruebas
-antes de desplegar, y el que genera él no.
+Cuando pregunte si sobrescribe el workflow, responde **que no**: el que está en
+`.github/workflows/desplegar.yml` corre los tipos y las 86 pruebas antes de
+desplegar, y el que genera él no.
 
-Comprueba que el secreto se llame exactamente
-`FIREBASE_SERVICE_ACCOUNT_VENTAS_9A210` en *Settings → Secrets and variables →
-Actions*. Si le puso otro nombre, cámbialo en el workflow.
+Comprueba que el secreto se llame `FIREBASE_SERVICE_ACCOUNT_VENTAS_9A210` en
+*Settings → Secrets and variables → Actions*. Si le puso otro nombre, cámbialo
+en el workflow.
 
-Desde ahí, cada `git push` a `main` compila, corre las pruebas y despliega. Si
-una prueba falla, **no despliega**, que es justo lo que queremos.
-
----
-
-## Qué vas a poder probar, y qué no
-
-**Sí funciona hoy, en cualquier dispositivo con la URL:**
-
-- Cargar el cuaderno de cualquier día, de contado o fiado
-- Precios por frío, al tiempo y mayoreo
-- Pago mixto multimoneda con IGTF
-- Cuentas de clientes y abonos parciales
-- El cierre con sus dos cifras
-- Sin conexión: se sigue cargando y todo queda guardado
-
-**Todavía no:**
-
-- **Los datos NO se comparten entre dispositivos.** Cada navegador tiene su
-  propia copia en IndexedDB. Si cargas el cuaderno en la computadora del local
-  y abres la URL en tu teléfono, el teléfono aparece vacío. Para eso hace falta
-  el backend, y es la siguiente decisión que hay que tomar (ver abajo).
-- Borrar los datos del navegador borra lo cargado. Mientras no haya backend,
-  **una sola máquina es la buena** y conviene que sea siempre la misma.
+Desde ahí, cada `git push` a `main` compila, prueba y despliega. Si una prueba
+falla, **no despliega**.
 
 ---
 
-## La decisión que sigue: dónde viven los datos
+## Cómo funciona la sincronización
 
-Ahora mismo la aplicación no tiene backend. Hay dos caminos y conviene elegir
-antes de que haya datos de verdad que migrar:
+La caja **siempre lee de su copia local**. El servidor nunca está en el camino
+de cargar una venta, así que la aplicación responde igual con señal que sin
+ella. Lo que viaja hacia arriba es una cola.
 
-**Firestore**, en el mismo proyecto `ventas-9a210`. Ventaja: ya lo tienes, la
-sincronización entre dispositivos sale casi gratis y el trabajo sin conexión
-también. Desventaja: los reportes de margen, rotación y kardex hay que
-construirlos a mano documento por documento, y el motor de precios no se puede
-revalidar del lado del servidor.
+Cuando hay señal, en este orden:
 
-**PostgreSQL** (Supabase), que es lo que dice el plano y lo que ya está
-modelado en `esquema_licoreria.sql`. Ventaja: los reportes son consultas,
-`resolver_precio()` ya existe y revalida lo que calcula la caja. Desventaja: un
-proveedor más y la sincronización sin conexión hay que escribirla, aunque con
-40 productos es la cola que ya está en `src/data/sync.ts`.
+1. **Sube** lo que haya en la cola: ventas, cobros.
+2. **Baja** el catálogo, los clientes y el movimiento de los últimos 90 días.
 
-El contrato que hay que implementar es el mismo en los dos casos y son tres
-funciones (`src/data/sync.ts`), así que la decisión es reversible sin tocar ni
-el dominio ni la interfaz.
+El orden importa. Al revés, una bajada podría pisar el stock local con el
+remoto antes de que las ventas de este equipo lleguen arriba, y la mercancía ya
+vendida reaparecería en el anaquel.
+
+**Reintentar es seguro.** El id de cada venta lo genera la caja, y la subida va
+dentro de una transacción que primero mira si ese documento ya existe. Si
+existe, no vuelve a descontar stock. Sin ese chequeo, un reenvío descontaría la
+mercancía dos veces.
+
+---
+
+## Lo que todavía no está probado
+
+Firebase está bloqueado desde el entorno donde se escribió este código, así que
+**la conexión con Firestore no se ha ejecutado nunca contra el servidor real**.
+La lógica de negocio sí (86 pruebas), y la aplicación se probó completa contra
+la copia local, pero estas cuatro cosas hay que verlas funcionar la primera vez:
+
+- Que las reglas dejen leer y escribir con la sesión iniciada.
+- Que la siembra automática suba los 40 productos sin quedarse a medias.
+- Que una venta suba y descuente stock **una sola vez**.
+- Que un segundo dispositivo vea lo cargado en el primero.
+
+Si algo falla, el indicador de la barra pasa a **Falló al subir** y el detalle
+del error sale al pasarle el ratón por encima. Nada se pierde: lo que no sube
+se queda en la cola.
+
+---
+
+## Pendiente de decidir
+
+- **¿Hasta cuándo se puede editar un día ya cerrado?** Hoy se puede volver a
+  cualquier fecha y seguir cargando. Si el dueño revisa el cierre del lunes y
+  después alguien agrega una venta a ese lunes, el número que vio deja de ser
+  el número.
+- **Los iconos de `public/` son marcadores de sitio.** Hay que reemplazarlos
+  por el arte real antes de instalar la aplicación en la caja.
+- **El bloque heredado de `firestore.rules`**, cuando se confirme que la
+  aplicación vieja ya no se usa.

@@ -34,6 +34,26 @@ import {
   type Snapshot,
 } from '../data/db'
 import { UBICACION_FRIO, UBICACION_VENTA_DEFECTO } from '../data/seed'
+import { bajarSnapshot, configurarTransporte, empujarCola } from '../data/sync'
+
+/** Cada cuánto se intenta sincronizar sola, si hay señal */
+const INTERVALO_SYNC = 5 * 60_000
+
+/**
+ * Firestore se carga aparte y solo cuando toca sincronizar.
+ *
+ * Son unos 600 KB de SDK. Cargarlos en el arranque retrasa que se vea la
+ * cuadrícula, y con la conexión del local eso se nota. La caja lee de la copia
+ * local, así que puede funcionar entera antes de que este trozo termine de
+ * bajar; lo único que espera es la subida.
+ */
+let transporteListo: Promise<void> | null = null
+async function prepararTransporte(): Promise<void> {
+  transporteListo ??= import('../data/firestore').then(({ transporteFirestore }) => {
+    configurarTransporte(transporteFirestore)
+  })
+  return transporteListo
+}
 
 /**
  * Estado de la aplicación.
@@ -55,6 +75,9 @@ export function usePos() {
   )
   const [pendientes, setPendientes] = useState(0)
   const [aviso, setAviso] = useState<{ texto: string; tono: 'ok' | 'error' } | null>(null)
+  const [sincronizando, setSincronizando] = useState(false)
+  const [ultimaSync, setUltimaSync] = useState<number | null>(null)
+  const [errorSync, setErrorSync] = useState<string | null>(null)
 
   useEffect(() => {
     let vivo = true
@@ -94,6 +117,70 @@ export function usePos() {
     const t = setTimeout(() => setAviso(null), 2800)
     return () => clearTimeout(t)
   }, [aviso])
+
+  /**
+   * Sube lo pendiente y baja lo que hayan cargado otros dispositivos.
+   *
+   * El orden importa: PRIMERO se sube y DESPUÉS se baja. Al revés, una bajada
+   * podría pisar el stock local con el remoto antes de que las ventas de esta
+   * caja lleguen arriba, y la mercancía ya vendida reaparecería en el anaquel.
+   */
+  const sincronizar = useCallback(async (silencioso = true) => {
+    if (!navigator.onLine) {
+      if (!silencioso) setAviso({ texto: 'No hay señal para sincronizar', tono: 'error' })
+      return
+    }
+    setSincronizando(true)
+    setErrorSync(null)
+    try {
+      await prepararTransporte()
+      const empuje = await empujarCola()
+      await bajarSnapshot()
+
+      const [s2, comercial, cola] = await Promise.all([
+        cargarSnapshot(),
+        cargarMovimientoComercial(),
+        pendientesDeSubir(),
+      ])
+      setSnapshot(s2)
+      setVentas(comercial.ventas)
+      setAbonos(comercial.abonos)
+      setClientes(comercial.clientes)
+      setPendientes(cola)
+      setUltimaSync(Date.now())
+
+      if (!silencioso) {
+        setAviso({
+          texto:
+            empuje.aceptadas > 0
+              ? `${empuje.aceptadas} documento${empuje.aceptadas > 1 ? 's' : ''} subido${empuje.aceptadas > 1 ? 's' : ''}`
+              : 'Todo al día',
+          tono: 'ok',
+        })
+      }
+    } catch (e) {
+      const texto = e instanceof Error ? e.message : 'falló la sincronización'
+      setErrorSync(texto)
+      if (!silencioso) setAviso({ texto, tono: 'error' })
+    } finally {
+      setSincronizando(false)
+    }
+  }, [])
+
+  // Sincroniza al arrancar, cuando vuelve la señal, y cada tanto.
+  useEffect(() => {
+    if (!snapshot) return
+    void sincronizar(true)
+    const alVolver = () => void sincronizar(true)
+    window.addEventListener('online', alVolver)
+    const reloj = setInterval(() => void sincronizar(true), INTERVALO_SYNC)
+    return () => {
+      window.removeEventListener('online', alVolver)
+      clearInterval(reloj)
+    }
+    // Solo al montar, cuando el catálogo local ya está cargado.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snapshot !== null])
 
   const catalogoPrecios = useMemo(
     () => ({ listas: snapshot?.listas ?? [], precios: snapshot?.precios ?? [] }),
@@ -244,9 +331,11 @@ export function usePos() {
         texto: clienteId ? `Fiado a ${nombre ?? 'cliente'}` : 'Venta cargada',
         tono: 'ok',
       })
+      // Sin esperar: si hay señal sube ya, y si no, se queda en la cola.
+      void sincronizar(true)
       return venta
     },
-    [snapshot, carrito, dia, clientes, aplicarSalidaDeStock],
+    [snapshot, carrito, dia, clientes, aplicarSalidaDeStock, sincronizar],
   )
 
   const anular = useCallback(async (ventaId: UUID) => {
@@ -281,8 +370,9 @@ export function usePos() {
       setAbonos((a) => [...a, abono])
       setPendientes(await pendientesDeSubir())
       setAviso({ texto: `Cobro registrado en el día ${dia}`, tono: 'ok' })
+      void sincronizar(true)
     },
-    [snapshot, dia],
+    [snapshot, dia, sincronizar],
   )
 
   const crearCliente = useCallback(async (datos: Omit<Cliente, 'id' | 'creadoEn' | 'activo'>) => {
@@ -339,6 +429,10 @@ export function usePos() {
     cierre,
     enLinea,
     pendientes,
+    sincronizando,
+    ultimaSync,
+    errorSync,
+    sincronizar,
     aviso,
     setAviso,
     stockDe,

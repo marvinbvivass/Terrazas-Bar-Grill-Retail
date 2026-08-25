@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { formatoNumero, parsearMonto } from '../domain/money'
 import { hoy, sumarDias, textoLargo } from '../domain/dias'
+import { salir } from '../data/firebase'
 import type { Pos } from '../hooks/usePos'
 
 export type Vista = 'cuaderno' | 'clientes' | 'cierre'
@@ -125,29 +126,56 @@ export function TopBar({
           </button>
         )}
 
-        <div
-          className={`flex items-center gap-1.5 rounded px-2.5 py-1 ${
-            pos.pendientes > 0 ? 'bg-cobre/15 text-cobre2' : 'text-apagado'
-          }`}
-          title="Documentos que todavía no llegaron al servidor"
-        >
-          <span className="font-mono text-[10px] tracking-[0.12em] uppercase">Por subir</span>
-          <span className="tabular text-sm font-semibold">{pos.pendientes}</span>
-        </div>
-
-        <div
-          className={`flex items-center gap-2 rounded px-2.5 py-1 ${
-            pos.enLinea ? 'text-apagado' : 'bg-alerta/15 text-alerta'
+        <button
+          onClick={() => void pos.sincronizar(false)}
+          disabled={pos.sincronizando || !pos.enLinea}
+          title={
+            pos.errorSync
+              ? `Última sincronización falló: ${pos.errorSync}`
+              : pos.ultimaSync
+                ? `Al día desde las ${new Date(pos.ultimaSync).toLocaleTimeString('es-VE')}`
+                : 'Todavía no ha sincronizado'
+          }
+          className={`flex items-center gap-2 rounded px-2.5 py-1 disabled:opacity-60 ${
+            !pos.enLinea
+              ? 'bg-alerta/15 text-alerta'
+              : pos.errorSync
+                ? 'bg-alerta/15 text-alerta'
+                : pos.pendientes > 0
+                  ? 'bg-cobre/15 text-cobre2'
+                  : 'text-apagado hover:bg-panel2'
           }`}
         >
           <span
-            className={`h-2 w-2 rounded-full ${pos.enLinea ? 'bg-verde' : 'bg-alerta'}`}
+            className={`h-2 w-2 rounded-full ${
+              !pos.enLinea || pos.errorSync
+                ? 'bg-alerta'
+                : pos.sincronizando
+                  ? 'animate-pulse bg-cobre'
+                  : 'bg-verde'
+            }`}
             aria-hidden
           />
           <span className="font-mono text-[11px] font-medium tracking-[0.08em] uppercase">
-            {pos.enLinea ? 'En línea' : 'Sin señal'}
+            {!pos.enLinea
+              ? 'Sin señal'
+              : pos.sincronizando
+                ? 'Subiendo…'
+                : pos.errorSync
+                  ? 'Falló al subir'
+                  : pos.pendientes > 0
+                    ? `${pos.pendientes} por subir`
+                    : 'Al día'}
           </span>
-        </div>
+        </button>
+
+        <button
+          onClick={() => void salir()}
+          className="rounded px-2 py-1 font-mono text-[10px] tracking-[0.1em] text-apagado uppercase hover:text-alerta"
+          title="Cerrar sesión en este equipo"
+        >
+          Salir
+        </button>
       </div>
     </header>
   )
