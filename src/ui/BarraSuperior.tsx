@@ -2,70 +2,57 @@ import { useState } from 'react'
 import { hoy, sumarDias } from '../domain/dias'
 import { salir } from '../data/firebase'
 import { ChipMoneda } from './moneda'
-import { TasasSheet } from './TasasSheet'
 import type { Pos } from '../hooks/usePos'
+import type { Rol } from '../domain/types'
 
 /**
  * Barra superior para teléfono.
  *
- * Cabe en una sola fila porque en un móvil en vertical no hay ancho para más.
- * Lo único que ocupa el centro es el día de trabajo: como el día se puede
- * cambiar, si no está visible las ventas terminan cargadas en la fecha
- * equivocada y el cierre de ayer cambia solo.
+ * Cabe en una fila porque en un móvil en vertical no hay ancho para más. Debajo
+ * va el día de trabajo, que se puede mover: si no estuviera visible, las ventas
+ * terminarían cargadas en la fecha equivocada y el cierre de ayer cambiaría
+ * solo.
  */
-export function BarraSuperior({ pos }: { pos: Pos }) {
-  const [tasas, setTasas] = useState(false)
+export function BarraSuperior({
+  pos,
+  titulo,
+  rol,
+  onAtras,
+}: {
+  pos: Pos
+  /** Nombre de la pantalla. En el menú va el nombre del negocio. */
+  titulo: string
+  rol: Rol
+  /** null en el menú: no hay a dónde volver */
+  onAtras: (() => void) | null
+}) {
   const [menu, setMenu] = useState(false)
   const esHoy = pos.dia === hoy()
 
   const fecha = new Date(`${pos.dia}T12:00:00`)
-  const etiqueta = esHoy
-    ? 'Hoy'
-    : fecha.toLocaleDateString('es-VE', { weekday: 'short', day: 'numeric', month: 'short' })
+  const etiqueta = fecha.toLocaleDateString('es-VE', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  })
 
   return (
     <>
       <header className="pad-arriba shrink-0 border-b border-linea bg-panel">
-        <div className="flex items-center gap-1 px-2 py-2">
-          <button
-            onClick={() => pos.setDia(sumarDias(pos.dia, -1))}
-            className="h-10 w-9 rounded-lg text-[20px] text-tinta2"
-            aria-label="Día anterior"
-          >
-            ‹
-          </button>
+        <div className="flex items-center gap-1 px-2 py-1.5">
+          {onAtras ? (
+            <button
+              onClick={onAtras}
+              className="h-10 w-9 text-[24px] leading-none text-tinta2"
+              aria-label="Volver al menú"
+            >
+              ‹
+            </button>
+          ) : (
+            <span className="w-2" />
+          )}
 
-          <div className="min-w-0 flex-1 text-center">
-            <p className="font-mono text-[9px] tracking-[0.16em] text-apagado uppercase">
-              Día de trabajo
-            </p>
-            <label className="relative block">
-              <span
-                className={`block truncate text-[15px] font-bold ${esHoy ? 'text-tinta' : 'text-cobre2'}`}
-              >
-                {etiqueta}
-              </span>
-              {/* El input nativo va encima e invisible: abre el calendario de
-                  Android al tocar, sin heredar su aspecto de escritorio. */}
-              <input
-                type="date"
-                value={pos.dia}
-                max={hoy()}
-                onChange={(e) => e.target.value && pos.setDia(e.target.value)}
-                className="absolute inset-0 h-full w-full opacity-0"
-                aria-label="Elegir día de trabajo"
-              />
-            </label>
-          </div>
-
-          <button
-            onClick={() => pos.setDia(sumarDias(pos.dia, 1))}
-            disabled={esHoy}
-            className="h-10 w-9 rounded-lg text-[20px] text-tinta2 disabled:opacity-25"
-            aria-label="Día siguiente"
-          >
-            ›
-          </button>
+          <h1 className="min-w-0 flex-1 truncate text-[17px] font-bold">{titulo}</h1>
 
           <ChipMoneda />
 
@@ -98,11 +85,61 @@ export function BarraSuperior({ pos }: { pos: Pos }) {
           </button>
         </div>
 
+        {/* Día de trabajo */}
+        <div className="flex items-center gap-1 border-t border-linea/60 px-2 py-1">
+          <button
+            onClick={() => pos.setDia(sumarDias(pos.dia, -1))}
+            className="h-9 w-9 rounded-lg text-[19px] text-tinta2"
+            aria-label="Día anterior"
+          >
+            ‹
+          </button>
+
+          <label className="relative min-w-0 flex-1 text-center">
+            <span
+              className={`block truncate text-[13.5px] font-semibold ${
+                esHoy ? 'text-tinta2' : 'text-cobre2'
+              }`}
+            >
+              {etiqueta}
+            </span>
+            {/* El input nativo va encima e invisible: abre el calendario de
+                Android al tocar, sin heredar su aspecto de escritorio. */}
+            <input
+              type="date"
+              value={pos.dia}
+              max={hoy()}
+              onChange={(e) => e.target.value && pos.setDia(e.target.value)}
+              className="absolute inset-0 h-full w-full opacity-0"
+              aria-label="Elegir día de trabajo"
+            />
+          </label>
+
+          <button
+            onClick={() => pos.setDia(sumarDias(pos.dia, 1))}
+            disabled={esHoy}
+            className="h-9 w-9 rounded-lg text-[19px] text-tinta2 disabled:opacity-25"
+            aria-label="Día siguiente"
+          >
+            ›
+          </button>
+
+          {!esHoy && (
+            <button
+              onClick={() => pos.setDia(hoy())}
+              className="rounded-lg border border-cobre px-2.5 py-1 font-mono text-[10px] tracking-wider text-cobre2 uppercase"
+              style={{ minHeight: 0 }}
+            >
+              Hoy
+            </button>
+          )}
+        </div>
+
         {/* Una franja solo cuando hay algo que decir. Ocupar alto permanente
-            con "Al día" en una pantalla de teléfono es desperdiciarlo. */}
+            con "Al día" en la pantalla de un teléfono es desperdiciarlo. */}
         {(!pos.enLinea || pos.errorSync || pos.pendientes > 0) && (
           <div
-            className={`px-3 pb-1.5 text-center font-mono text-[10.5px] tracking-wider uppercase ${
+            className={`px-3 pb-1 text-center font-mono text-[10.5px] tracking-wider uppercase ${
               pos.errorSync || !pos.enLinea ? 'text-alerta' : 'text-ambar'
             }`}
           >
@@ -118,15 +155,10 @@ export function BarraSuperior({ pos }: { pos: Pos }) {
             aria-label="Cerrar menú"
             onClick={() => setMenu(false)}
           />
-          <div className="pad-arriba fixed top-0 right-2 z-50 mt-12 w-52 overflow-hidden rounded-xl border border-linea2 bg-panel2 shadow-2xl">
-            <OpcionMenu
-              onClick={() => {
-                setMenu(false)
-                setTasas(true)
-              }}
-            >
-              Tasas del día
-            </OpcionMenu>
+          <div className="pad-arriba fixed top-0 right-2 z-50 mt-12 w-56 overflow-hidden rounded-xl border border-linea2 bg-panel2 shadow-2xl">
+            <p className="border-b border-linea px-4 py-2 font-mono text-[10px] tracking-[0.12em] text-apagado uppercase">
+              {rol === 'administrador' ? 'Administrador' : 'Encargado'}
+            </p>
             <OpcionMenu
               onClick={() => {
                 setMenu(false)
@@ -141,8 +173,6 @@ export function BarraSuperior({ pos }: { pos: Pos }) {
           </div>
         </>
       )}
-
-      {tasas && <TasasSheet pos={pos} onCerrar={() => setTasas(false)} />}
     </>
   )
 }

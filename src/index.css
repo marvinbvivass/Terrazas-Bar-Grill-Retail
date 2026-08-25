@@ -4,23 +4,37 @@
  * Tema de la aplicación: fondo oscuro, contraste alto y objetivos grandes.
  * Se opera de pie, con prisa y a veces con las manos mojadas, sobre un
  * teléfono o una tablet Android sostenida con una sola mano.
+ *
+ * ---------------------------------------------------------------------------
+ * La paleta: azul noche, cian de marca y un ámbar cálido
+ * ---------------------------------------------------------------------------
+ *
+ * Los nombres de las variables se conservan (`cobre`, `frio`…) aunque el color
+ * ya no sea cobre. Es a propósito: son papeles, no colores. `cobre` significa
+ * "el acento con el que se toca", y está usado en veinte sitios; renombrarlo
+ * obligaría a repasar cada pantalla para no ganar nada. Cambiando el valor
+ * aquí se retiñe la aplicación entera de una vez.
+ *
+ * El acento es el cian de la marca y el fondo un azul noche, no negro: sobre
+ * negro puro el cian vibra y cansa la vista en una pantalla que se mira todo
+ * el día. El ámbar queda para los avisos que no son errores.
  */
 @theme {
-  --color-fondo: #0e1512;
-  --color-panel: #17201b;
-  --color-panel2: #1f2a23;
-  --color-panel3: #29362e;
-  --color-linea: #2b382f;
-  --color-linea2: #3b4c41;
-  --color-tinta: #e9ebe5;
-  --color-tinta2: #b6bfb8;
-  --color-apagado: #86918a;
-  --color-cobre: #d08a4a;
-  --color-cobre2: #f0ad72;
-  --color-frio: #5aa9c9;
-  --color-verde: #4fb286;
-  --color-alerta: #d96a5c;
-  --color-ambar: #d9ab4a;
+  --color-fondo: #071626;
+  --color-panel: #0d2438;
+  --color-panel2: #14304a;
+  --color-panel3: #1d3f5e;
+  --color-linea: #1c3b58;
+  --color-linea2: #2b5178;
+  --color-tinta: #eaf3fb;
+  --color-tinta2: #a8c2d8;
+  --color-apagado: #7691aa;
+  --color-cobre: #00a9e0;
+  --color-cobre2: #4fd3f2;
+  --color-frio: #6fe3d2;
+  --color-verde: #3fc08a;
+  --color-alerta: #e5645a;
+  --color-ambar: #f2a94b;
 
   --font-sans: 'Archivo', system-ui, -apple-system, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;

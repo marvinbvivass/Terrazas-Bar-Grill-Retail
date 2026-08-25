@@ -423,8 +423,47 @@ export function usePos() {
     const cliente: Cliente = { ...datos, id: crypto.randomUUID(), creadoEn: Date.now(), activo: true }
     await guardarCliente(cliente)
     setClientes((c) => [...c, cliente])
+    setAviso({ texto: `${cliente.nombre} agregado`, tono: 'ok' })
+    void sincronizar(true)
     return cliente
-  }, [])
+  }, [sincronizar])
+
+  const actualizarCliente = useCallback(
+    async (cliente: Cliente) => {
+      await guardarCliente(cliente)
+      setClientes((c) => c.map((x) => (x.id === cliente.id ? cliente : x)))
+      setAviso({ texto: 'Cliente actualizado', tono: 'ok' })
+      void sincronizar(true)
+    },
+    [sincronizar],
+  )
+
+  /**
+   * Dar de baja a un cliente.
+   *
+   * Se desactiva, no se borra, y solo si no debe nada. Borrar a alguien con
+   * saldo dejaría sus ventas a crédito apuntando a un cliente que ya no existe:
+   * la deuda desaparecería de la pantalla sin que nadie la haya pagado, que es
+   * la peor forma posible de perder plata.
+   */
+  const eliminarCliente = useCallback(
+    async (clienteId: UUID): Promise<boolean> => {
+      const saldo = saldoDeCliente(clienteId, ventas, abonos)
+      if (saldo > 0) {
+        setAviso({ texto: 'No se puede quitar: todavía debe', tono: 'error' })
+        return false
+      }
+      const cliente = clientes.find((c) => c.id === clienteId)
+      if (!cliente) return false
+      const baja: Cliente = { ...cliente, activo: false }
+      await guardarCliente(baja)
+      setClientes((c) => c.filter((x) => x.id !== clienteId))
+      setAviso({ texto: `${cliente.nombre} dado de baja`, tono: 'ok' })
+      void sincronizar(true)
+      return true
+    },
+    [clientes, ventas, abonos, sincronizar],
+  )
 
   // -------------------------------------------------------------------------
   // Derivados
@@ -497,6 +536,8 @@ export function usePos() {
     recargarCatalogo,
     cobrar,
     crearCliente,
+    actualizarCliente,
+    eliminarCliente,
     ventasAbiertasDe: (clienteId: UUID) => ventasAbiertas(clienteId, ventas, abonos, dia),
     saldoDe: (clienteId: UUID) => saldoDeCliente(clienteId, ventas, abonos),
   }

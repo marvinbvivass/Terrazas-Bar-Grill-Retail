@@ -10,6 +10,16 @@
 
 export type UUID = string
 
+/**
+ * Papeles de usuario.
+ *
+ * `administrador` ve el historial de días cerrados y puede cambiarle el papel a
+ * otras cuentas. `encargado` carga la venta del día, cobra y lleva las cuentas
+ * por cobrar. Quien no tenga papel asignado es encargado: ante la duda, el
+ * permiso más pequeño.
+ */
+export type Rol = 'administrador' | 'encargado'
+
 export type MonedaCodigo = 'USD' | 'VES' | 'COP'
 
 export interface Moneda {

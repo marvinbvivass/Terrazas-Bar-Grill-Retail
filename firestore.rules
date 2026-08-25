@@ -5,13 +5,11 @@ rules_version = '2';
 //
 //  ⚠️  LAS REGLAS SON DEL PROYECTO ENTERO, NO DE UNA APLICACIÓN.
 //
-//  En este proyecto conviven dos aplicaciones: la licorería (colecciones de
-//  arriba) y la vieja `dist-castillo` (bloque "heredado" de abajo). Desplegar
-//  estas reglas sin el bloque heredado dejaría a la aplicación vieja sin poder
-//  leer ni escribir nada, aunque su hosting siga en pie.
-//
-//  Ese bloque se puede borrar el día que se confirme que ya nadie usa la
-//  aplicación vieja, y no antes.
+//  Aquí vivía también un bloque "heredado" con las rutas de la vieja
+//  `dist-castillo` (`artifacts/**`, `public_data/**`, `users/**`). Se retiró
+//  tras confirmar que ya nadie usa esa aplicación y que sus datos se borraron.
+//  Si alguna vez reaparece, no bastará con reinstalarla: habrá que devolver
+//  también sus rutas a este archivo.
 //
 //  La apiKey que va en el código del navegador NO protege nada: es pública por
 //  diseño. Lo único que separa los datos del local de cualquiera que abra la
@@ -23,6 +21,37 @@ service cloud.firestore {
 
     function sesion() {
       return request.auth != null;
+    }
+
+    /*
+     * Administrador según su propia ficha en `usuarios`.
+     *
+     * Si la ficha no existe, `get()` devuelve null y la regla falla, que es lo
+     * correcto: sin ficha no hay ascenso. Cada `get()` dentro de una regla
+     * cuenta como una lectura facturada, así que solo se usa donde hace falta
+     * de verdad y no en las colecciones que se leen a cada rato.
+     */
+    function esAdmin() {
+      return sesion()
+        && get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.rol == 'administrador';
+    }
+
+    // ---------------------------------------------------------------------
+    // Quién es quién
+    //
+    // Cada cuenta crea SU PROPIA ficha la primera vez que entra, y solo un
+    // administrador puede cambiarle el papel a nadie. Sin la segunda mitad,
+    // un encargado se ascendería solo con una línea en la consola del
+    // navegador; esconderle el botón en la interfaz no sirve de nada.
+    //
+    // Nadie se borra: si una cuenta deja de trabajar aquí se desactiva en
+    // Authentication, que es donde de verdad se le corta el paso.
+    // ---------------------------------------------------------------------
+    match /usuarios/{uid} {
+      allow read:   if sesion();
+      allow create: if sesion() && request.auth.uid == uid;
+      allow update: if esAdmin();
+      allow delete: if false;
     }
 
     // ---------------------------------------------------------------------
@@ -69,15 +98,5 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    // ---------------------------------------------------------------------
-    // Heredado · dist-castillo
-    // Mantener mientras esa aplicación siga en uso. Ver el aviso de arriba.
-    // ---------------------------------------------------------------------
-    match /users/{uid} {
-      allow read: if sesion();
-      allow write: if sesion() && request.auth.uid == uid;
-    }
-    match /artifacts/{resto=**}    { allow read, write: if sesion(); }
-    match /public_data/{resto=**}  { allow read, write: if sesion(); }
   }
 }

@@ -5,7 +5,7 @@ import { MONEDAS, convertir, formato, formatoNumero, parsearMonto } from '../dom
 import { textoCorto } from '../domain/dias'
 import type { MetodoPago, Pago, UUID } from '../domain/types'
 import type { Pos } from '../hooks/usePos'
-import { Hoja } from './Hoja'
+import { HojaCliente } from './HojaCliente'
 
 /**
  * CXC · cuentas por cobrar: quién debe, cuánto, desde cuándo, y cómo se cobra.
@@ -108,96 +108,8 @@ export function ClientesView({ pos }: { pos: Pos }) {
         </button>
       </div>
 
-      {creando && <HojaNuevoCliente pos={pos} onCerrar={() => setCreando(false)} />}
+      {creando && <HojaCliente pos={pos} cliente={null} onCerrar={() => setCreando(false)} />}
     </div>
-  )
-}
-
-/**
- * Alta de cliente.
- *
- * Solo el nombre es obligatorio. Pedir cédula y teléfono para poder fiarle a
- * alguien que está esperando en el mostrador es la forma segura de que nadie
- * registre a nadie y las deudas vuelvan al papel.
- */
-function HojaNuevoCliente({ pos, onCerrar }: { pos: Pos; onCerrar: () => void }) {
-  const [nombre, setNombre] = useState('')
-  const [telefono, setTelefono] = useState('')
-  const [tope, setTope] = useState('')
-  const [guardando, setGuardando] = useState(false)
-
-  async function guardar() {
-    const limpio = nombre.trim()
-    if (limpio === '') return
-    setGuardando(true)
-    await pos.crearCliente({
-      nombre: limpio,
-      documento: null,
-      telefono: telefono.trim() || null,
-      limiteCredito: parsearMonto(tope),
-      nota: null,
-    })
-    setGuardando(false)
-    onCerrar()
-  }
-
-  return (
-    <Hoja
-      titulo="Nuevo cliente"
-      onCerrar={onCerrar}
-      pie={
-        <button
-          onClick={() => void guardar()}
-          disabled={guardando || nombre.trim() === ''}
-          className="w-full rounded-xl bg-cobre py-3.5 text-[16px] font-bold text-fondo disabled:opacity-40"
-        >
-          {guardando ? 'Guardando…' : 'Crear cliente'}
-        </button>
-      }
-    >
-      <div className="flex flex-col gap-3 py-1">
-        <Campo etiqueta="Nombre" valor={nombre} onCambio={setNombre} autoFocus />
-        <Campo etiqueta="Teléfono (opcional)" valor={telefono} onCambio={setTelefono} tipo="tel" />
-        <Campo
-          etiqueta="Tope de crédito en $ (opcional)"
-          valor={tope}
-          onCambio={setTope}
-          tipo="decimal"
-        />
-        <p className="text-[12.5px] leading-relaxed text-apagado">
-          El tope solo avisa cuando se pasa; no bloquea la venta.
-        </p>
-      </div>
-    </Hoja>
-  )
-}
-
-function Campo({
-  etiqueta,
-  valor,
-  onCambio,
-  tipo,
-  autoFocus,
-}: {
-  etiqueta: string
-  valor: string
-  onCambio: (v: string) => void
-  tipo?: 'tel' | 'decimal'
-  autoFocus?: boolean
-}) {
-  return (
-    <label className="flex flex-col gap-1.5">
-      <span className="font-mono text-[10.5px] tracking-[0.12em] text-apagado uppercase">
-        {etiqueta}
-      </span>
-      <input
-        value={valor}
-        onChange={(e) => onCambio(e.target.value)}
-        autoFocus={autoFocus}
-        inputMode={tipo === 'decimal' ? 'decimal' : tipo === 'tel' ? 'tel' : 'text'}
-        className="rounded-xl border border-linea bg-panel2 px-3 py-3 focus:border-cobre"
-      />
-    </label>
   )
 }
 
