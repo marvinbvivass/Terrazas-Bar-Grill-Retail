@@ -5,12 +5,14 @@ import type { MetodoPago } from '../domain/types'
 import type { Pos } from '../hooks/usePos'
 
 /**
- * Pantalla de cobro.
+ * Cómo se pagó la venta que se está transcribiendo.
  *
  * El pago mixto es la operación normal, no la excepción: mitad en efectivo
  * dólar y mitad en pago móvil es como se paga en Venezuela. Por eso se puede
- * agregar un pago tras otro hasta cubrir la factura, y el pendiente se muestra
- * convertido a todas las monedas para no obligar al cajero a calcular nada.
+ * agregar un pago tras otro hasta cubrir la venta.
+ *
+ * Sirve tanto para cargar una venta de contado del cuaderno como para registrar
+ * el cobro de un fiado: en los dos casos lo que se captura es plata que entró.
  */
 export function PaymentSheet({ pos, onCerrar }: { pos: Pos; onCerrar: () => void }) {
   const s = pos.snapshot!
@@ -67,7 +69,7 @@ export function PaymentSheet({ pos, onCerrar }: { pos: Pos; onCerrar: () => void
 
   async function finalizar() {
     setCobrando(true)
-    await pos.cobrar()
+    await pos.registrar(null)
     setCobrando(false)
     onCerrar()
   }
@@ -79,7 +81,10 @@ export function PaymentSheet({ pos, onCerrar }: { pos: Pos; onCerrar: () => void
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
       <div className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-linea2 bg-panel shadow-2xl">
         <div className="flex items-center justify-between border-b border-linea px-5 py-3">
-          <h2 className="text-lg font-bold">Cobrar</h2>
+          <div>
+            <h2 className="text-lg font-bold">Cómo pagó</h2>
+            <p className="font-mono text-[11px] text-apagado">Venta de contado · día {pos.dia}</p>
+          </div>
           <button
             onClick={onCerrar}
             className="rounded px-3 py-1.5 font-mono text-[11px] tracking-wider text-apagado uppercase hover:text-tinta"
@@ -91,7 +96,7 @@ export function PaymentSheet({ pos, onCerrar }: { pos: Pos; onCerrar: () => void
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           {/* Resumen */}
           <div className="grid grid-cols-3 gap-3">
-            <Dato etiqueta="Total factura" valor={formato(t.total, 'USD')} />
+            <Dato etiqueta="Total de la venta" valor={formato(t.total, 'USD')} />
             <Dato
               etiqueta="IGTF acumulado"
               valor={formato(t.igtf, 'USD')}
@@ -266,7 +271,7 @@ export function PaymentSheet({ pos, onCerrar }: { pos: Pos; onCerrar: () => void
             onClick={() => void finalizar()}
             className="rounded-lg bg-verde px-8 py-3.5 text-[15px] font-bold text-fondo hover:brightness-110 disabled:cursor-not-allowed disabled:bg-panel3 disabled:text-apagado"
           >
-            {cobrando ? 'Guardando…' : cubierto ? 'Finalizar venta' : 'Falta cubrir el total'}
+            {cobrando ? 'Guardando…' : cubierto ? 'Cargar la venta' : 'Falta cubrir el total'}
           </button>
         </div>
       </div>

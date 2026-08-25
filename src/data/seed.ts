@@ -1,5 +1,6 @@
 import type {
   Categoria,
+  Cliente,
   CodigoBarras,
   Existencia,
   ListaPrecio,
@@ -294,3 +295,18 @@ export function construirSemilla(): DatosSemilla {
 }
 
 export const TASA_VES_INICIAL = 36.5
+
+// ---------------------------------------------------------------------------
+// Clientes de confianza
+// ---------------------------------------------------------------------------
+
+/**
+ * Los clientes del sistema NO son todos los que compran: son solo los que
+ * llevan fiado. El que paga de contado no hace falta registrarlo.
+ */
+export const CLIENTES_SEMILLA: Cliente[] = [
+  { id: 'cli-1', nombre: 'Juan Pérez', documento: 'V-12345678', telefono: '0412-1112233', limiteCredito: 50, nota: 'Vecino, paga los viernes', activo: true, creadoEn: 0 },
+  { id: 'cli-2', nombre: 'María González', documento: 'V-9876543', telefono: '0414-5556677', limiteCredito: 30, nota: null, activo: true, creadoEn: 0 },
+  { id: 'cli-3', nombre: 'Taller El Rápido', documento: 'J-407654321', telefono: '0416-9998877', limiteCredito: 120, nota: 'Compran para los almuerzos del taller', activo: true, creadoEn: 0 },
+  { id: 'cli-4', nombre: 'Carlos el barbero', documento: null, telefono: '0424-3334455', limiteCredito: 0, nota: null, activo: true, creadoEn: 0 },
+]

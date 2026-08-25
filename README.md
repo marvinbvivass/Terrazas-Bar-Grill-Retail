@@ -1,8 +1,11 @@
-# Caja · Licorería
+# Cuaderno · Licorería
 
-Punto de venta e inventario para licorería. **Funciona sin conexión desde el primer día**:
-la caja lee siempre de una réplica local y el servidor nunca está en el camino crítico
-de un cobro.
+Control de ventas, inventario y fiado para licorería.
+
+**No es una caja registradora.** El encargado anota las ventas en un cuaderno durante el
+día y las transcribe al cerrar, así que todo se registra contra un **día de trabajo** que
+el usuario elige, no contra el reloj. Los clientes del sistema son solo los de confianza,
+los que llevan fiado: el que paga de contado no hace falta registrarlo.
 
 Sustituye a [`dist-castillo`](https://github.com/marvinbvivass/dist-castillo), del que
 conserva el modelo caja/paquete/unidad, los cascos retornables y el multimoneda, y del
@@ -21,31 +24,38 @@ No hace falta backend ni base de datos. La primera vez se siembran 40 productos 
 ejemplo en IndexedDB y la caja queda operativa.
 
 ```bash
-npm test         # 56 pruebas de la lógica de negocio
+npm test         # 80 pruebas de la lógica de negocio
 npm run build    # verifica tipos y compila
 ```
 
 ---
 
-## Lo que ya funciona
+## Las tres pantallas
 
-- **Cuadrícula de 40 productos** con pestañas por categoría y búsqueda.
-- **Escáner** en modo teclado: se teclea el código en el campo de búsqueda y Enter lo
-  agrega. Un código de 6 a 14 dígitos se trata como código de barras; cualquier otra
-  cosa, como búsqueda.
-- **Frío vs. al tiempo** por línea: cambiar la ubicación recalcula el precio solo.
-- **Dos escalones de mayoreo**: desde 24 unidades para cerveza y refrescos, desde 6 para
-  licores y vinos. Se activan solos a mitad de la venta.
-- **Pago mixto multimoneda** con IGTF sobre lo abonado en divisa, vuelto en la moneda
-  del método y referencia obligatoria donde toca.
-- **Ticket** con folio provisional marcado como tal mientras no haya correlativo.
-- **Sin señal**: se vende igual, la venta queda en cola, y recargar la aplicación con el
-  módem apagado la levanta igual gracias al service worker.
+**Cuaderno** — transcribir el día. Cuadrícula de 40 productos, escáner como atajo, frío
+vs. al tiempo por línea y dos escalones de mayoreo que se activan solos. Cada venta se
+carga *de contado* (con su pago mixto multimoneda e IGTF) o se *fía* a un cliente. Debajo
+del carrito se ve lo que ya se cargó del día, para no perder la cuenta.
+
+**Fiado** — quién debe, cuánto y desde cuándo. Un abono se reparte de la venta más vieja
+a la más nueva, o solo entre las que se marquen a mano. Admite pagos parciales: si debe
+$12 y abona $5, la venta queda en $7.
+
+**Cierre** — el día en dos cifras, que es lo que evita creer que se vendió más de lo que
+se cobró:
+
+| | qué incluye | para qué sirve |
+|---|---|---|
+| **Entró en caja** | contado del día + cobros de fiados viejos | cuadrar la gaveta |
+| **Se vendió** | contado del día + lo que se fio hoy | inventario y margen |
+
+Más el desglose de qué contar por método y por moneda, la cartera total por cobrar y lo
+que más se movió.
 
 ## Lo que todavía no
 
-Recepción de mercancía, mermas, conteo, turno de caja con arqueo, roles y permisos,
-reportes, y el backend real. Están en el plan de fases; el esquema ya los soporta.
+Recepción de mercancía, mermas, conteo físico, roles y permisos, reportes históricos, y
+el backend real. Están en el plan de fases; el esquema ya los soporta.
 
 ---
 
@@ -55,16 +65,19 @@ reportes, y el backend real. Están en el plan de fases; el esquema ya los sopor
 src/
   domain/          Lógica pura, sin React ni base de datos. Todo con pruebas.
     types.ts       Espejo en TypeScript de esquema_licoreria.sql
+    dias.ts        El día de trabajo como texto 'YYYY-MM-DD'
     money.ts       Redondeo, conversión y formato multimoneda
     stock.ts       Conversión presentación ↔ unidad base, desglosar()
     pricing.ts     Motor de precios: puerto de resolver_precio() del SQL
     cart.ts        Carrito, totales, IVA, IGTF, pago mixto, cierre de venta
+    credito.ts     Saldos, ventas abiertas y reparto de abonos
+    cierre.ts      Las dos cifras del día
   data/
     seed.ts        Los 40 productos de ejemplo
     db.ts          Réplica local en IndexedDB (Dexie) y cola de salida
     sync.ts        Contrato de sincronización. Hoy con transporte de mentira.
-  hooks/usePos.ts  Estado de la caja
-  ui/              Cuadrícula, carrito, cobro, ticket, barra de estado
+  hooks/usePos.ts  Estado de la aplicación
+  ui/              Cuaderno, fiado, cierre y sus hojas
 ```
 
 ### Las tres reglas que sostienen todo
@@ -82,6 +95,17 @@ happy hour es insertar una fila, no desplegar código.
 idempotente el envío: empujar la cola dos veces produce el mismo resultado que empujarla
 una, y un corte a mitad del envío no deja ventas duplicadas. El correlativo definitivo lo
 asigna el servidor al sincronizar.
+
+**4. Hay tres fechas y son tres cosas distintas.** `dia` es el día de trabajo al que
+pertenece la venta y se guarda como texto `'2026-08-25'`, no como timestamp: agrupar por
+rango de fechas parece más elegante hasta que una venta de las once de la noche cae en el
+cierre del día siguiente porque el servidor está en UTC y el local en UTC-4. `fecha` es
+cuándo ocurrió según el cuaderno, y `registradaEn` cuándo se tecleó, que puede ser al día
+siguiente.
+
+**5. El saldo de un cliente no se guarda en ninguna parte.** Se calcula sumando sus
+ventas a crédito y restando lo abonado. Un saldo almacenado es un saldo que un día se
+desincroniza y nadie sabe cuál de los dos números es el bueno.
 
 ### Dos decisiones de negocio que están en el código
 
@@ -118,10 +142,11 @@ caja calcula el precio sin red y el servidor lo revalida al sincronizar. Las pru
 
 ## Pendiente de decidir
 
-- **¿Cuántas cajas van a operar a la vez?** Con una sola, el stock estimado offline es
-  prácticamente exacto. Con dos vendiendo sin red al mismo tiempo, ambas pueden vender la
-  última botella y hay que decidir qué hace el sistema al reconciliar.
-- **¿Quién fija la tasa cada día y puede el cajero cambiarla?** Hoy cualquiera la edita
-  desde la barra de estado. Con cortes frecuentes, una tasa cacheada puede quedar vieja.
+- **¿Quién fija la tasa cada día y puede el encargado cambiarla?** Hoy cualquiera la
+  edita desde la barra superior.
+- **¿Hasta cuándo se puede editar un día ya cerrado?** Ahora mismo se puede volver a
+  cualquier fecha y seguir cargando. Si el dueño revisa el cierre y luego alguien agrega
+  una venta a ese día, el número que vio deja de ser el número. Falta un cierre que se
+  pueda marcar como cerrado.
 - **Los iconos de `public/` son marcadores de sitio.** Hay que reemplazarlos por el arte
   real antes de instalar la aplicación en la caja.

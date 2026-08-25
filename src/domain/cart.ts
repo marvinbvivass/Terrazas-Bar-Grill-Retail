@@ -2,6 +2,8 @@ import { MONEDA_BASE, convertir, redondear, redondearMoneda } from './money'
 import { resolverPrecio, type CatalogoPrecios } from './pricing'
 import { aUnidadesBase } from './stock'
 import type {
+  CondicionVenta,
+  DiaNegocio,
   LineaVenta,
   MetodoPago,
   MonedaCodigo,
@@ -307,32 +309,64 @@ export function estaPagado(carrito: Carrito): boolean {
 // Cierre de la venta
 // ---------------------------------------------------------------------------
 
-export interface DatosCierre {
-  turnoId: UUID
+export interface DatosVenta {
+  /** Día de negocio al que pertenece: el del cuaderno, no el de hoy */
+  dia: DiaNegocio
+  /** Cuándo ocurrió la venta según el cuaderno */
+  fecha: number
   usuarioId: UUID
   folioProvisional: string
   tasas: Record<string, number>
   creadaOffline: boolean
-  fecha?: number
+  /** Si es a crédito, hay que decir de quién */
+  clienteId?: UUID | null
 }
 
-export function construirVenta(carrito: Carrito, datos: DatosCierre): Venta {
+/**
+ * Cierra una venta de contado: la que ya se cobró.
+ * Los pagos que tenga el carrito son los que entraron en caja ese día.
+ */
+export function construirVentaContado(carrito: Carrito, datos: DatosVenta): Venta {
+  return construir(carrito, datos, 'contado', null)
+}
+
+/**
+ * Cierra una venta a crédito: salió la mercancía, no entró la plata.
+ * Sin pagos: los pagos llegan después, como abonos.
+ */
+export function construirVentaCredito(
+  carrito: Carrito,
+  datos: DatosVenta,
+  clienteId: UUID,
+): Venta {
+  return construir({ ...carrito, pagos: [] }, datos, 'credito', clienteId)
+}
+
+function construir(
+  carrito: Carrito,
+  datos: DatosVenta,
+  condicion: CondicionVenta,
+  clienteId: UUID | null,
+): Venta {
   const t = totales(carrito)
   return {
     id: crypto.randomUUID(),
     numero: null,
     folioProvisional: datos.folioProvisional,
-    turnoId: datos.turnoId,
-    fecha: datos.fecha ?? Date.now(),
+    dia: datos.dia,
+    fecha: datos.fecha,
+    registradaEn: Date.now(),
+    condicion,
+    clienteId,
     moneda: MONEDA_BASE,
     tasas: datos.tasas,
     subtotal: t.subtotal,
     descuento: t.descuento,
     iva: t.iva,
-    igtf: t.igtf,
+    igtf: condicion === 'credito' ? 0 : t.igtf,
     total: t.total,
     costoTotal: t.costoTotal,
-    estado: 'pagada',
+    estado: 'registrada',
     usuarioId: datos.usuarioId,
     lineas: carrito.lineas,
     pagos: carrito.pagos,

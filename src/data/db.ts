@@ -1,10 +1,13 @@
-import Dexie, { type EntityTable } from 'dexie'
+import Dexie, { type EntityTable, type Table } from 'dexie'
 import type {
+  Abono,
   Categoria,
+  Cliente,
   CodigoBarras,
   Existencia,
   ListaPrecio,
   MetodoPago,
+  DiaNegocio,
   MovimientoInventario,
   Precio,
   Presentacion,
@@ -14,7 +17,7 @@ import type {
   UUID,
   Venta,
 } from '../domain/types'
-import { TASA_VES_INICIAL, construirSemilla } from './seed'
+import { CLIENTES_SEMILLA, TASA_VES_INICIAL, construirSemilla } from './seed'
 
 /**
  * Réplica local. Es de donde lee la caja SIEMPRE, haya o no señal.
@@ -32,13 +35,13 @@ export interface Config {
   valor: unknown
 }
 
-export interface VentaPendiente {
-  id: UUID
-  venta: Venta
-  intentos: number
-  ultimoError: string | null
-  creadaEn: number
-}
+/** Un documento esperando subir: una venta o un cobro */
+export type Pendiente =
+  | { id: UUID; tipo: 'venta'; venta: Venta; intentos: number; ultimoError: string | null; creadaEn: number }
+  | { id: UUID; tipo: 'abono'; abono: Abono; intentos: number; ultimoError: string | null; creadaEn: number }
+
+/** @deprecated se mantiene el nombre viejo para no romper importaciones */
+export type VentaPendiente = Pendiente
 
 class LicoreriaDB extends Dexie {
   categorias!: EntityTable<Categoria, 'id'>
@@ -53,7 +56,11 @@ class LicoreriaDB extends Dexie {
   tasas!: EntityTable<TasaCambio & { id: string }, 'id'>
   movimientos!: EntityTable<MovimientoInventario, 'id'>
   ventas!: EntityTable<Venta, 'id'>
-  outbox!: EntityTable<VentaPendiente, 'id'>
+  clientes!: EntityTable<Cliente, 'id'>
+  abonos!: EntityTable<Abono, 'id'>
+  // Table y no EntityTable: el outbox guarda una unión discriminada y
+  // el InsertType de EntityTable no la sabe estrechar.
+  outbox!: Table<Pendiente, string>
   config!: EntityTable<Config, 'clave'>
 
   constructor() {
@@ -70,7 +77,9 @@ class LicoreriaDB extends Dexie {
       metodosPago: 'id',
       tasas: 'id, moneda',
       movimientos: 'id, productoId, documentoId, fecha',
-      ventas: 'id, fecha, sincronizadaEn',
+      ventas: 'id, dia, clienteId, condicion, sincronizadaEn',
+      clientes: 'id, nombre, activo',
+      abonos: 'id, dia, clienteId',
       outbox: 'id, creadaEn',
       config: 'clave',
     })
@@ -111,7 +120,8 @@ export async function sembrarSiHaceFalta(): Promise<void> {
   await db.transaction(
     'rw',
     [db.categorias, db.ubicaciones, db.productos, db.presentaciones, db.codigos,
-     db.listas, db.precios, db.existencias, db.metodosPago, db.tasas, db.config],
+     db.listas, db.precios, db.existencias, db.metodosPago, db.tasas,
+     db.clientes, db.config],
     async () => {
       await db.categorias.bulkPut(s.categorias)
       await db.ubicaciones.bulkPut(s.ubicaciones)
@@ -127,10 +137,10 @@ export async function sembrarSiHaceFalta(): Promise<void> {
       await db.tasas.bulkPut([
         { id: 'VES', moneda: 'VES', tasa: TASA_VES_INICIAL, fecha: Date.now(), fuente: 'manual' },
       ])
+      await db.clientes.bulkPut(CLIENTES_SEMILLA)
       await db.config.bulkPut([
-        { clave: 'turnoId', valor: crypto.randomUUID() },
         { clave: 'usuarioId', valor: 'usuario-demo' },
-        { clave: 'usuarioNombre', valor: 'Cajero 1' },
+        { clave: 'usuarioNombre', valor: 'Encargado' },
         { clave: 'folioSecuencia', valor: 0 },
       ])
     },
@@ -154,7 +164,6 @@ export interface Snapshot {
   existencias: Map<string, number>
   metodosPago: MetodoPago[]
   tasas: Record<string, number>
-  turnoId: UUID
   usuarioId: UUID
   usuarioNombre: string
 }
@@ -199,7 +208,6 @@ export async function cargarSnapshot(): Promise<Snapshot> {
     existencias: new Map(existencias.map((e) => [e.id, e.cantidadBase])),
     metodosPago: metodosPago.filter((m) => m.activo),
     tasas: Object.fromEntries(tasas.map((t) => [t.moneda, t.tasa])),
-    turnoId: (cfg.get('turnoId') as string) ?? crypto.randomUUID(),
     usuarioId: (cfg.get('usuarioId') as string) ?? 'usuario-demo',
     usuarioNombre: (cfg.get('usuarioNombre') as string) ?? 'Cajero',
   }
@@ -245,11 +253,71 @@ export async function registrarVenta(
 
     await db.outbox.put({
       id: venta.id,
+      tipo: 'venta',
       venta,
       intentos: 0,
       ultimoError: null,
       creadaEn: Date.now(),
     })
+  })
+}
+
+/**
+ * Registra un cobro a un cliente.
+ *
+ * No toca inventario: la mercancía salió el día de la venta a crédito. Aquí
+ * solo entra dinero.
+ */
+export async function registrarAbono(abono: Abono): Promise<void> {
+  await db.transaction('rw', [db.abonos, db.outbox], async () => {
+    await db.abonos.put(abono)
+    await db.outbox.put({
+      id: abono.id,
+      tipo: 'abono',
+      abono,
+      intentos: 0,
+      ultimoError: null,
+      creadaEn: Date.now(),
+    })
+  })
+}
+
+export async function guardarCliente(cliente: Cliente): Promise<void> {
+  await db.clientes.put(cliente)
+}
+
+/** Ventas y cobros que necesita la vista de crédito y la de cierre */
+export async function cargarMovimientoComercial(): Promise<{ ventas: Venta[]; abonos: Abono[]; clientes: Cliente[] }> {
+  const [ventas, abonos, clientes] = await Promise.all([
+    db.ventas.toArray(),
+    db.abonos.toArray(),
+    db.clientes.toArray(),
+  ])
+  return { ventas, abonos, clientes }
+}
+
+export async function ventasDelDia(dia: DiaNegocio): Promise<Venta[]> {
+  return db.ventas.where('dia').equals(dia).toArray()
+}
+
+export async function anularVenta(ventaId: UUID): Promise<void> {
+  await db.transaction('rw', [db.ventas, db.movimientos, db.existencias], async () => {
+    const venta = await db.ventas.get(ventaId)
+    if (!venta || venta.estado === 'anulada') return
+    await db.ventas.put({ ...venta, estado: 'anulada' })
+
+    // Devuelve el inventario: un asiento nuevo, nunca se borra el viejo
+    const movs = await db.movimientos.where('documentoId').equals(ventaId).toArray()
+    for (const m of movs) {
+      const id = claveExistencia(m.productoId, m.ubicacionId)
+      const actual = await db.existencias.get(id)
+      await db.existencias.put({
+        id,
+        productoId: m.productoId,
+        ubicacionId: m.ubicacionId,
+        cantidadBase: (actual?.cantidadBase ?? 0) - m.cantidadBase,
+      })
+    }
   })
 }
 

@@ -5,7 +5,8 @@ import {
   cambiarCantidad,
   cambiarUbicacion,
   carritoVacio,
-  construirVenta,
+  construirVentaContado,
+  construirVentaCredito,
   movimientosDeVenta,
   quitar,
   quitarPago,
@@ -13,13 +14,20 @@ import {
   totales,
   type Carrito,
 } from '../domain/cart'
-import type { Pago, Presentacion, Producto, UUID, Venta } from '../domain/types'
+import { calcularCierre, type Cierre } from '../domain/cierre'
+import { construirAbono, resumirClientes, saldoDeCliente, ventasAbiertas, type PlanAbono } from '../domain/credito'
+import { hoy, inicioDe } from '../domain/dias'
+import type { Abono, Cliente, DiaNegocio, Pago, Presentacion, Producto, UUID, Venta } from '../domain/types'
 import {
+  anularVenta,
+  cargarMovimientoComercial,
   cargarSnapshot,
   claveExistencia,
+  guardarCliente,
   guardarTasa,
   pedirAlmacenamientoPersistente,
   pendientesDeSubir,
+  registrarAbono,
   registrarVenta,
   sembrarSiHaceFalta,
   siguienteFolio,
@@ -27,43 +35,49 @@ import {
 } from '../data/db'
 import { UBICACION_FRIO, UBICACION_VENTA_DEFECTO } from '../data/seed'
 
-export interface EstadoPos {
-  cargando: boolean
-  snapshot: Snapshot | null
-  carrito: Carrito
-  enLinea: boolean
-  pendientes: number
-  ultimaVenta: Venta | null
-  aviso: { texto: string; tono: 'ok' | 'error' } | null
-}
-
+/**
+ * Estado de la aplicación.
+ *
+ * Ojo con el cambio de modelo: esto ya no es una caja en vivo. El encargado
+ * anota las ventas en un cuaderno durante el día y las transcribe al cerrar,
+ * así que TODO se registra contra un "día de trabajo" que el usuario elige, no
+ * contra el reloj. Por eso `dia` es estado de primer nivel y no un detalle.
+ */
 export function usePos() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
+  const [dia, setDia] = useState<DiaNegocio>(hoy())
   const [carrito, setCarrito] = useState<Carrito>(carritoVacio())
+  const [ventas, setVentas] = useState<Venta[]>([])
+  const [abonos, setAbonos] = useState<Abono[]>([])
+  const [clientes, setClientes] = useState<Cliente[]>([])
   const [enLinea, setEnLinea] = useState<boolean>(() =>
     typeof navigator === 'undefined' ? true : navigator.onLine,
   )
   const [pendientes, setPendientes] = useState(0)
-  const [ultimaVenta, setUltimaVenta] = useState<Venta | null>(null)
-  const [aviso, setAviso] = useState<EstadoPos['aviso']>(null)
+  const [aviso, setAviso] = useState<{ texto: string; tono: 'ok' | 'error' } | null>(null)
 
-  // Arranque: sembrar si hace falta y cargar todo el catálogo a memoria
   useEffect(() => {
     let vivo = true
     void (async () => {
       await pedirAlmacenamientoPersistente()
       await sembrarSiHaceFalta()
-      const s = await cargarSnapshot()
+      const [s, comercial, cola] = await Promise.all([
+        cargarSnapshot(),
+        cargarMovimientoComercial(),
+        pendientesDeSubir(),
+      ])
       if (!vivo) return
       setSnapshot(s)
-      setPendientes(await pendientesDeSubir())
+      setVentas(comercial.ventas)
+      setAbonos(comercial.abonos)
+      setClientes(comercial.clientes)
+      setPendientes(cola)
     })()
     return () => {
       vivo = false
     }
   }, [])
 
-  // Estado de conexión. Es lo primero que mira el cajero cuando algo va raro.
   useEffect(() => {
     const arriba = () => setEnLinea(true)
     const abajo = () => setEnLinea(false)
@@ -77,7 +91,7 @@ export function usePos() {
 
   useEffect(() => {
     if (!aviso) return
-    const t = setTimeout(() => setAviso(null), 2600)
+    const t = setTimeout(() => setAviso(null), 2800)
     return () => clearTimeout(t)
   }, [aviso])
 
@@ -104,7 +118,6 @@ export function usePos() {
     [snapshot],
   )
 
-  /** Stock ya descontado por lo que hay en el carrito, que es lo que el cajero necesita ver */
   const stockDisponible = useCallback(
     (productoId: UUID, ubicacionId: UUID): number => {
       const enCarrito = carrito.lineas
@@ -131,7 +144,7 @@ export function usePos() {
       if (!snapshot) return false
       const encontrado = snapshot.codigos.get(codigo.trim())
       if (!encontrado) {
-        setAviso({ texto: `Código ${codigo} no está en el catálogo`, tono: 'error' })
+        setAviso({ texto: `El código ${codigo} no está en el catálogo`, tono: 'error' })
         return false
       }
       const presentacion = snapshot.presentacionesPorId.get(encontrado.presentacionId)
@@ -142,7 +155,6 @@ export function usePos() {
         setAviso({ texto: 'El código apunta a un producto que ya no existe', tono: 'error' })
         return false
       }
-      // Si el producto tiene stock en nevera y no en sala, se despacha frío
       const ubicacion =
         stockDisponible(producto.id, UBICACION_VENTA_DEFECTO) <= 0 &&
         stockDisponible(producto.id, UBICACION_FRIO) > 0
@@ -159,12 +171,10 @@ export function usePos() {
     (lineaId: UUID, cantidad: number) => aplicar(cambiarCantidad(carrito, lineaId, cantidad)),
     [aplicar, carrito],
   )
-
   const quitarLinea = useCallback(
     (lineaId: UUID) => aplicar(quitar(carrito, lineaId)),
     [aplicar, carrito],
   )
-
   const alternarFrio = useCallback(
     (lineaId: UUID) => {
       const linea = carrito.lineas.find((l) => l.id === lineaId)
@@ -174,12 +184,7 @@ export function usePos() {
     },
     [aplicar, carrito],
   )
-
   const vaciar = useCallback(() => setCarrito(carritoVacio()), [])
-
-  // -------------------------------------------------------------------------
-  // Pagos
-  // -------------------------------------------------------------------------
 
   const anadirPago = useCallback((pago: Pago) => setCarrito((c) => agregarPago(c, pago)), [])
   const removerPago = useCallback((pagoId: UUID) => setCarrito((c) => quitarPago(c, pagoId)), [])
@@ -190,25 +195,11 @@ export function usePos() {
   }, [])
 
   // -------------------------------------------------------------------------
-  // Cierre
+  // Registrar una venta del cuaderno
   // -------------------------------------------------------------------------
 
-  const cobrar = useCallback(async (): Promise<Venta | null> => {
-    if (!snapshot || carrito.lineas.length === 0) return null
-
-    const folio = await siguienteFolio()
-    const venta = construirVenta(carrito, {
-      turnoId: snapshot.turnoId,
-      usuarioId: snapshot.usuarioId,
-      folioProvisional: folio,
-      tasas: snapshot.tasas,
-      creadaOffline: !navigator.onLine,
-    })
-
+  const aplicarSalidaDeStock = useCallback((venta: Venta) => {
     const movimientos = movimientosDeVenta(venta)
-    await registrarVenta(venta, movimientos)
-
-    // Refleja el descuento de stock en la copia en memoria
     setSnapshot((s) => {
       if (!s) return s
       const existencias = new Map(s.existencias)
@@ -218,25 +209,138 @@ export function usePos() {
       }
       return { ...s, existencias }
     })
+    return movimientos
+  }, [])
 
-    setPendientes(await pendientesDeSubir())
-    setUltimaVenta(venta)
-    setCarrito(carritoVacio())
-    return venta
-  }, [snapshot, carrito])
+  const registrar = useCallback(
+    async (clienteId: UUID | null): Promise<Venta | null> => {
+      if (!snapshot || carrito.lineas.length === 0) return null
 
-  const t = useMemo(() => totales(carrito), [carrito])
+      const folio = await siguienteFolio()
+      const datos = {
+        dia,
+        // Sin hora real en el cuaderno, se ancla al mediodía del día de trabajo:
+        // así ninguna venta se escapa al día anterior o al siguiente.
+        fecha: inicioDe(dia) + 12 * 3600_000,
+        usuarioId: snapshot.usuarioId,
+        folioProvisional: folio,
+        tasas: snapshot.tasas,
+        creadaOffline: !navigator.onLine,
+      }
+
+      const venta = clienteId
+        ? construirVentaCredito(carrito, datos, clienteId)
+        : construirVentaContado(carrito, datos)
+
+      const movimientos = aplicarSalidaDeStock(venta)
+      await registrarVenta(venta, movimientos)
+
+      setVentas((v) => [...v, venta])
+      setPendientes(await pendientesDeSubir())
+      setCarrito(carritoVacio())
+
+      const nombre = clientes.find((c) => c.id === clienteId)?.nombre
+      setAviso({
+        texto: clienteId ? `Fiado a ${nombre ?? 'cliente'}` : 'Venta cargada',
+        tono: 'ok',
+      })
+      return venta
+    },
+    [snapshot, carrito, dia, clientes, aplicarSalidaDeStock],
+  )
+
+  const anular = useCallback(async (ventaId: UUID) => {
+    await anularVenta(ventaId)
+    const comercial = await cargarMovimientoComercial()
+    setVentas(comercial.ventas)
+    const s = await cargarSnapshot()
+    setSnapshot(s)
+    setAviso({ texto: 'Venta anulada y mercancía devuelta al inventario', tono: 'ok' })
+  }, [])
+
+  // -------------------------------------------------------------------------
+  // Crédito
+  // -------------------------------------------------------------------------
+
+  const cobrar = useCallback(
+    async (clienteId: UUID, plan: PlanAbono, pagos: Pago[], nota?: string) => {
+      if (!snapshot || plan.aplicado <= 0) return
+      const abono = construirAbono(
+        {
+          clienteId,
+          dia,
+          fecha: inicioDe(dia) + 12 * 3600_000,
+          monto: plan.aplicado,
+          pagos,
+          usuarioId: snapshot.usuarioId,
+          nota: nota ?? null,
+        },
+        plan,
+      )
+      await registrarAbono(abono)
+      setAbonos((a) => [...a, abono])
+      setPendientes(await pendientesDeSubir())
+      setAviso({ texto: `Cobro registrado en el día ${dia}`, tono: 'ok' })
+    },
+    [snapshot, dia],
+  )
+
+  const crearCliente = useCallback(async (datos: Omit<Cliente, 'id' | 'creadoEn' | 'activo'>) => {
+    const cliente: Cliente = { ...datos, id: crypto.randomUUID(), creadoEn: Date.now(), activo: true }
+    await guardarCliente(cliente)
+    setClientes((c) => [...c, cliente])
+    return cliente
+  }, [])
+
+  // -------------------------------------------------------------------------
+  // Derivados
+  // -------------------------------------------------------------------------
+
+  const ventasDelDia = useMemo(
+    () => ventas.filter((v) => v.dia === dia).sort((a, b) => b.registradaEn - a.registradaEn),
+    [ventas, dia],
+  )
+
+  const resumenClientes = useMemo(
+    () => resumirClientes(clientes, ventas, abonos),
+    [clientes, ventas, abonos],
+  )
+
+  const carteraTotal = useMemo(
+    () => resumenClientes.reduce((s, r) => s + r.saldo, 0),
+    [resumenClientes],
+  )
+
+  const cierre: Cierre = useMemo(
+    () =>
+      calcularCierre({
+        dia,
+        ventas,
+        abonos,
+        metodosPago: snapshot?.metodosPago ?? [],
+        carteraAlCierre: carteraTotal,
+      }),
+    [dia, ventas, abonos, snapshot, carteraTotal],
+  )
 
   return {
     snapshot,
+    cargando: snapshot === null,
+    dia,
+    setDia,
     carrito,
-    totales: t,
+    totales: useMemo(() => totales(carrito), [carrito]),
+    ventas,
+    abonos,
+    clientes,
+    ventasDelDia,
+    resumenClientes,
+    carteraTotal,
+    cierre,
     enLinea,
     pendientes,
-    ultimaVenta,
     aviso,
     setAviso,
-    cargando: snapshot === null,
     stockDe,
     stockDisponible,
     agregarProducto,
@@ -248,8 +352,12 @@ export function usePos() {
     anadirPago,
     removerPago,
     actualizarTasa,
+    registrar,
+    anular,
     cobrar,
-    cerrarTicket: () => setUltimaVenta(null),
+    crearCliente,
+    ventasAbiertasDe: (clienteId: UUID) => ventasAbiertas(clienteId, ventas, abonos, dia),
+    saldoDe: (clienteId: UUID) => saldoDeCliente(clienteId, ventas, abonos),
   }
 }
 

@@ -1,30 +1,25 @@
 import { useEffect, useState } from 'react'
 import { usePos } from './hooks/usePos'
-import { StatusBar } from './ui/StatusBar'
+import { TopBar, type Vista } from './ui/TopBar'
 import { ProductGrid } from './ui/ProductGrid'
 import { CartPanel } from './ui/CartPanel'
 import { PaymentSheet } from './ui/PaymentSheet'
-import { Ticket } from './ui/Ticket'
+import { FiarSheet } from './ui/FiarSheet'
+import { ClientesView } from './ui/ClientesView'
+import { CierreView } from './ui/CierreView'
 
 export function App() {
   const pos = usePos()
-  const [cobrando, setCobrando] = useState(false)
+  const [vista, setVista] = useState<Vista>('cuaderno')
+  const [hoja, setHoja] = useState<'ninguna' | 'contado' | 'fiar'>('ninguna')
 
-  // F12 cobra, Escape cierra. La caja se opera con las dos manos ocupadas.
   useEffect(() => {
     function tecla(e: KeyboardEvent) {
-      if (e.key === 'F12' && pos.carrito.lineas.length > 0 && !pos.ultimaVenta) {
-        e.preventDefault()
-        setCobrando(true)
-      }
-      if (e.key === 'Escape') {
-        if (pos.ultimaVenta) pos.cerrarTicket()
-        else setCobrando(false)
-      }
+      if (e.key === 'Escape') setHoja('ninguna')
     }
     window.addEventListener('keydown', tecla)
     return () => window.removeEventListener('keydown', tecla)
-  }, [pos])
+  }, [])
 
   if (pos.cargando) {
     return (
@@ -36,22 +31,25 @@ export function App() {
 
   return (
     <div className="flex h-full flex-col">
-      <StatusBar pos={pos} />
+      <TopBar pos={pos} vista={vista} onVista={setVista} />
 
-      <div className="flex min-h-0 flex-1">
-        <ProductGrid pos={pos} />
-        <CartPanel pos={pos} onCobrar={() => setCobrando(true)} />
-      </div>
-
-      {cobrando && !pos.ultimaVenta && (
-        <PaymentSheet pos={pos} onCerrar={() => setCobrando(false)} />
+      {vista === 'cuaderno' && (
+        <div className="flex min-h-0 flex-1">
+          <ProductGrid pos={pos} />
+          <CartPanel
+            pos={pos}
+            onContado={() => setHoja('contado')}
+            onFiar={() => setHoja('fiar')}
+          />
+        </div>
       )}
 
-      {pos.ultimaVenta && (
-        <Ticket venta={pos.ultimaVenta} pos={pos} onCerrar={pos.cerrarTicket} />
-      )}
+      {vista === 'clientes' && <ClientesView pos={pos} />}
+      {vista === 'cierre' && <CierreView pos={pos} />}
 
-      {/* Avisos del escáner: confirmación o código desconocido */}
+      {hoja === 'contado' && <PaymentSheet pos={pos} onCerrar={() => setHoja('ninguna')} />}
+      {hoja === 'fiar' && <FiarSheet pos={pos} onCerrar={() => setHoja('ninguna')} />}
+
       {pos.aviso && (
         <div
           role="status"

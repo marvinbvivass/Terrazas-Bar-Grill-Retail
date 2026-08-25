@@ -6,7 +6,7 @@ import {
   cambiarUbicacion,
   carritoVacio,
   cobradoPorMoneda,
-  construirVenta,
+  construirVentaContado,
   crearPago,
   estaPagado,
   movimientosDeVenta,
@@ -227,22 +227,26 @@ describe('pago mixto multimoneda e IGTF', () => {
 })
 
 describe('cierre de la venta', () => {
+  const datos = {
+    dia: '2026-08-25',
+    fecha: new Date('2026-08-25T19:30:00').getTime(),
+    usuarioId: 'user-1',
+    folioProvisional: 'P-014',
+    tasas: { VES: TASA_VES },
+    creadaOffline: true,
+  }
+
   it('congela tasas, costo y totales en el documento', () => {
     let c = carritoCon([{ presentacion: BOTELLA, ubicacionId: NEVERA.id, cantidad: 6 }])
     c = agregarPago(c, crearPago({ metodo: EFECTIVO_USD, montoAplicado: 7.5, tasa: 1 }))
 
-    const venta = construirVenta(c, {
-      turnoId: 'turno-1',
-      usuarioId: 'user-1',
-      folioProvisional: 'P-014',
-      tasas: { VES: TASA_VES },
-      creadaOffline: true,
-      fecha: MOMENTO,
-    })
+    const venta = construirVentaContado(c, datos)
 
     expect(venta.total).toBe(7.5)
+    expect(venta.condicion).toBe('contado')
     expect(venta.numero).toBeNull() // el correlativo lo pone el servidor
     expect(venta.folioProvisional).toBe('P-014')
+    expect(venta.dia).toBe('2026-08-25')
     expect(venta.creadaOffline).toBe(true)
     expect(venta.tasas.VES).toBe(TASA_VES)
     expect(venta.costoTotal).toBe(3.6) // 6 × 0,60, congelado
@@ -254,13 +258,7 @@ describe('cierre de la venta', () => {
       { presentacion: CAJA36, ubicacionId: SALA.id, cantidad: 1 },
       { presentacion: BOTELLA, ubicacionId: NEVERA.id, cantidad: 2 },
     ])
-    const venta = construirVenta(c, {
-      turnoId: 'turno-1',
-      usuarioId: 'user-1',
-      folioProvisional: 'P-015',
-      tasas: {},
-      creadaOffline: false,
-    })
+    const venta = construirVentaContado(c, datos)
     const movs = movimientosDeVenta(venta)
 
     expect(movs).toHaveLength(2)
@@ -273,13 +271,6 @@ describe('cierre de la venta', () => {
 
   it('cada venta lleva un UUID distinto: es lo que la hace idempotente al sincronizar', () => {
     const c = carritoCon([{ presentacion: BOTELLA, ubicacionId: SALA.id, cantidad: 1 }])
-    const datos = {
-      turnoId: 't',
-      usuarioId: 'u',
-      folioProvisional: 'P-1',
-      tasas: {},
-      creadaOffline: true,
-    }
-    expect(construirVenta(c, datos).id).not.toBe(construirVenta(c, datos).id)
+    expect(construirVentaContado(c, datos).id).not.toBe(construirVentaContado(c, datos).id)
   })
 })

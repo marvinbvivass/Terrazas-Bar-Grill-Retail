@@ -207,17 +207,35 @@ export interface Pago {
   referencia: string | null
 }
 
-export type EstadoVenta = 'borrador' | 'pagada' | 'anulada'
+/** De contado (entró la plata) o a crédito (salió la mercancía, la plata viene después) */
+export type CondicionVenta = 'contado' | 'credito'
 
+export type EstadoVenta = 'registrada' | 'anulada'
+
+/**
+ * Una venta del cuaderno.
+ *
+ * Ojo con las tres fechas, porque son tres cosas distintas y confundirlas es
+ * lo que hace que un cierre no cuadre:
+ *
+ *   dia           el día de negocio al que pertenece la venta ('2026-08-25').
+ *                 Es texto, no timestamp, a propósito: agrupar por fecha con
+ *                 husos horarios es la forma clásica de perder las ventas de
+ *                 las once de la noche.
+ *   fecha         cuándo ocurrió la venta según el cuaderno.
+ *   registradaEn  cuándo el encargado la tecleó. Puede ser al día siguiente.
+ */
 export interface Venta {
   /** UUID generado por la caja. Es lo que hace idempotente el envío al servidor. */
   id: UUID
-  /** Correlativo definitivo. null mientras la venta no se haya sincronizado. */
   numero: number | null
-  /** Folio provisional que se imprime cuando no hay señal: P-014 */
   folioProvisional: string
-  turnoId: UUID
+  dia: DiaNegocio
   fecha: number
+  registradaEn: number
+  condicion: CondicionVenta
+  /** Obligatorio si es a crédito, nulo si es de contado */
+  clienteId: UUID | null
   moneda: MonedaCodigo
   /** Tasas congeladas en el documento: sin esto no se puede reconstruir la venta */
   tasas: Record<string, number>
@@ -230,10 +248,52 @@ export interface Venta {
   estado: EstadoVenta
   usuarioId: UUID
   lineas: LineaVenta[]
+  /** Vacío mientras la venta a crédito no se haya cobrado */
   pagos: Pago[]
-  /** true si se creó sin conexión */
   creadaOffline: boolean
   sincronizadaEn: number | null
+}
+
+/** Día de negocio en formato 'YYYY-MM-DD' */
+export type DiaNegocio = string
+
+export interface Cliente {
+  id: UUID
+  nombre: string
+  documento: string | null
+  telefono: string | null
+  /** 0 = sin límite declarado. Solo avisa, no bloquea. */
+  limiteCredito: number
+  nota: string | null
+  activo: boolean
+  creadoEn: number
+}
+
+/** Parte de un abono que salda una venta concreta */
+export interface AplicacionAbono {
+  ventaId: UUID
+  monto: number
+}
+
+/**
+ * Un cobro a un cliente de confianza.
+ *
+ * El monto se reparte entre sus ventas abiertas, de la más vieja a la más
+ * nueva. Puede saldar varias, saldar una a medias, o las dos cosas.
+ */
+export interface Abono {
+  id: UUID
+  clienteId: UUID
+  dia: DiaNegocio
+  fecha: number
+  registradoEn: number
+  /** En moneda base */
+  monto: number
+  /** Un abono también puede ser mixto: mitad efectivo, mitad pago móvil */
+  pagos: Pago[]
+  aplicaciones: AplicacionAbono[]
+  usuarioId: UUID
+  nota: string | null
 }
 
 // ---------------------------------------------------------------------------
