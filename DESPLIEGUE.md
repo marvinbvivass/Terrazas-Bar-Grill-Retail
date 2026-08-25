@@ -109,7 +109,7 @@ Crea una cuenta de servicio, la guarda como secreto del repositorio y conecta
 las dos cosas. **La credencial nunca pasa por un chat ni por un archivo tuyo.**
 
 Cuando pregunte si sobrescribe el workflow, responde **que no**: el que está en
-`.github/workflows/desplegar.yml` corre los tipos y las 86 pruebas antes de
+`.github/workflows/desplegar.yml` corre los tipos y las 107 pruebas antes de
 desplegar, y el que genera él no.
 
 Comprueba que el secreto se llame `FIREBASE_SERVICE_ACCOUNT_VENTAS_9A210` en
@@ -147,7 +147,7 @@ mercancía dos veces.
 
 Firebase está bloqueado desde el entorno donde se escribió este código, así que
 **la conexión con Firestore no se ha ejecutado nunca contra el servidor real**.
-La lógica de negocio sí (86 pruebas), y la aplicación se probó completa contra
+La lógica de negocio sí (107 pruebas), y la aplicación se probó completa contra
 la copia local, pero estas cuatro cosas hay que verlas funcionar la primera vez:
 
 - Que las reglas dejen leer y escribir con la sesión iniciada.
