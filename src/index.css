@@ -15,26 +15,30 @@
  * obligaría a repasar cada pantalla para no ganar nada. Cambiando el valor
  * aquí se retiñe la aplicación entera de una vez.
  *
- * El acento es el cian de la marca y el fondo un azul noche, no negro: sobre
- * negro puro el cian vibra y cansa la vista en una pantalla que se mira todo
- * el día. El ámbar queda para los avisos que no son errores.
+ * Tarjetas blancas sobre el telón oscurecido, texto gris pizarra y acentos de
+ * la familia 600 de Tailwind: es el aspecto de la aplicación de Castillo, que
+ * es la que se tomó de referencia.
+ *
+ * El texto NO es negro puro sino gris pizarra (#1e293b). Sobre blanco, el
+ * negro absoluto produce un contraste tan duro que cansa al leer listas
+ * largas, que es lo que se hace aquí todo el rato.
  */
 @theme {
-  --color-fondo: #071626;
-  --color-panel: #0d2438;
-  --color-panel2: #14304a;
-  --color-panel3: #1d3f5e;
-  --color-linea: #1c3b58;
-  --color-linea2: #2b5178;
-  --color-tinta: #eaf3fb;
-  --color-tinta2: #a8c2d8;
-  --color-apagado: #7691aa;
-  --color-cobre: #00a9e0;
-  --color-cobre2: #4fd3f2;
-  --color-frio: #6fe3d2;
-  --color-verde: #3fc08a;
-  --color-alerta: #e5645a;
-  --color-ambar: #f2a94b;
+  --color-fondo: #eef2f7;
+  --color-panel: #ffffff;
+  --color-panel2: #f1f5f9;
+  --color-panel3: #e2e8f0;
+  --color-linea: #e2e8f0;
+  --color-linea2: #cbd5e1;
+  --color-tinta: #1e293b;
+  --color-tinta2: #475569;
+  --color-apagado: #64748b;
+  --color-cobre: #2563eb;
+  --color-cobre2: #1d4ed8;
+  --color-frio: #0891b2;
+  --color-verde: #059669;
+  --color-alerta: #dc2626;
+  --color-ambar: #d97706;
 
   --font-sans: 'Archivo', system-ui, -apple-system, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;

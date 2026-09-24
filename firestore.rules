@@ -92,6 +92,16 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // El acta de un día cerrado. Se puede volver a escribir —reabrir y cerrar
+    // otra vez es parte del trabajo normal— pero no se borra: un cierre que
+    // desaparece es un cierre que nadie puede auditar.
+    match /cierres/{id} {
+      allow read:   if sesion();
+      allow create: if sesion();
+      allow update: if sesion();
+      allow delete: if false;
+    }
+
     match /movimientos/{id} {
       allow read:   if sesion();
       allow create: if sesion();

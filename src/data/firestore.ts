@@ -14,6 +14,7 @@ import { obtenerFirestore } from './firebase'
 import { claveExistencia, db } from './db'
 import { movimientosDeVenta } from '../domain/cart'
 import { configuracionInicial } from './seed'
+import type { CierreDia } from '../domain/cierreDia'
 import type { Abono, Venta } from '../domain/types'
 import type { RespuestaSync, Transporte } from './sync'
 
@@ -313,7 +314,27 @@ export async function hayCatalogoRemoto(): Promise<boolean> {
 
 // ---------------------------------------------------------------------------
 
+/**
+ * Sube las actas de cierre.
+ *
+ * `merge: false` a propósito, al revés que el resto: el acta es el documento
+ * completo de un día y tiene que quedar exactamente como se cerró. Con merge,
+ * reabrir un día y cerrarlo con menos renglones de fiado dejaría arriba los
+ * renglones viejos mezclados con los nuevos.
+ */
+export async function subirCierres(cierres: CierreDia[]): Promise<void> {
+  if (cierres.length === 0) return
+  const lote = writeBatch(fsdb())
+  for (const c of cierres) {
+    lote.set(doc(fsdb(), 'cierres', c.id), limpiar({ ...c, sincronizadoEn: Date.now() }))
+  }
+  await lote.commit()
+}
+
 export const transporteFirestore: Transporte = {
+  async subirCierres(cierres) {
+    await subirCierres(cierres)
+  },
   async subirCatalogo(productoIds) {
     await subirConfiguracionSiFalta()
     for (const id of productoIds) await subirProducto(id)

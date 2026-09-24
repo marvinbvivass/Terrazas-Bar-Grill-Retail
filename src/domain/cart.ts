@@ -342,6 +342,121 @@ export function construirVentaCredito(
   return construir({ ...carrito, pagos: [] }, datos, 'credito', clienteId)
 }
 
+/**
+ * La venta del día: todo lo que salió del inventario en una jornada.
+ *
+ * ---------------------------------------------------------------------------
+ * Aquí las líneas y el total NO suman lo mismo, y es a propósito
+ * ---------------------------------------------------------------------------
+ *
+ * Las LÍNEAS son todo lo que salió del anaquel, fiado incluido: es lo que
+ * descuenta existencias y lo que deja margen. El TOTAL es solo lo que se cobró,
+ * porque `calcularCierre` suma los totales de las ventas de contado para saber
+ * qué debería haber en la gaveta, y meter ahí lo fiado haría cuadrar la caja
+ * contra plata que nadie entregó.
+ *
+ * Lo fiado vive en documentos aparte —una venta a crédito por cliente, sin
+ * líneas— que son los que alimentan CXC. Así cada cifra del cierre sale de un
+ * solo sitio: vendido = contado + crédito, y caja = contado.
+ *
+ * Si algún día alguien "arregla" esta asimetría igualando total y líneas, el
+ * cierre empezará a pedir en caja el dinero del fiado.
+ */
+export function construirVentaDelDia(
+  carrito: Carrito,
+  datos: DatosVenta,
+  /** Lo que se fio hoy, en moneda base. Se descuenta del total cobrado. */
+  creditoOtorgado: number,
+): Venta {
+  const venta = construir(carrito, datos, 'contado', null)
+  if (creditoOtorgado <= 0) return venta
+  return { ...venta, total: redondear(venta.total - creditoOtorgado, 2) }
+}
+
+/**
+ * La deuda de un cliente por lo que se llevó hoy, como documento aparte.
+ *
+ * SIN LÍNEAS, y esto es lo que hay que entender: la mercancía ya salió del
+ * inventario en la venta del día, que lleva todas las líneas. Si esta venta
+ * repitiera los productos, el stock se descontaría dos veces y el margen del
+ * día saldría al doble.
+ *
+ * Lo que este documento aporta es el saldo: cuánto debe este cliente y desde
+ * cuándo. Es lo que lee CXC y lo que van bajando los abonos.
+ */
+export function construirVentaCreditoSinLineas(
+  datos: DatosVenta,
+  clienteId: UUID,
+  monto: number,
+): Venta {
+  const total = redondear(monto, 2)
+  return {
+    id: crypto.randomUUID(),
+    numero: null,
+    folioProvisional: datos.folioProvisional,
+    dia: datos.dia,
+    fecha: datos.fecha,
+    registradaEn: Date.now(),
+    condicion: 'credito',
+    clienteId,
+    moneda: MONEDA_BASE,
+    tasas: datos.tasas,
+    subtotal: total,
+    descuento: 0,
+    // El IVA ya lo declaró la venta del día, que es la que tiene las líneas.
+    // Contarlo otra vez aquí lo duplicaría en el cierre.
+    iva: 0,
+    igtf: 0,
+    total,
+    costoTotal: 0,
+    estado: 'registrada',
+    usuarioId: datos.usuarioId,
+    lineas: [],
+    pagos: [],
+    creadaOffline: datos.creadaOffline,
+    sincronizadaEn: null,
+  }
+}
+
+/**
+ * Los pagos del cierre: un renglón por moneda contada.
+ *
+ * Sin IGTF. El impuesto se cobra sobre divisa en una venta concreta, y aquí lo
+ * que se carga es el total del día ya cobrado; aplicarlo sobre el agregado
+ * inventaría un impuesto que nadie cobró en el mostrador.
+ */
+export function construirPagosDelCierre(
+  recibido: Partial<Record<MonedaCodigo, number>>,
+  tasas: Record<string, number>,
+  metodos: MetodoPago[],
+): Pago[] {
+  const pagos: Pago[] = []
+  for (const moneda of Object.keys(recibido) as MonedaCodigo[]) {
+    const monto = recibido[moneda] ?? 0
+    if (monto <= 0) continue
+    const tasa = moneda === MONEDA_BASE ? 1 : (tasas[moneda] ?? 0)
+    if (tasa <= 0) continue
+    const metodo =
+      metodos.find((x) => x.moneda === moneda && x.esEfectivo) ??
+      metodos.find((x) => x.moneda === moneda)
+    if (!metodo) continue
+    pagos.push({
+      id: crypto.randomUUID(),
+      metodoPagoId: metodo.id,
+      metodoNombre: metodo.nombre,
+      moneda,
+      montoAplicado: redondear(monto / tasa, 2),
+      igtf: 0,
+      tasa,
+      montoEnMoneda: monto,
+      entregado: null,
+      vuelto: 0,
+      referencia: null,
+    })
+  }
+  return pagos
+}
+
 function construir(
   carrito: Carrito,
   datos: DatosVenta,

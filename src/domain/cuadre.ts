@@ -30,8 +30,17 @@ import type { MonedaCodigo } from './types'
 export type Recibido = Partial<Record<MonedaCodigo, number>>
 
 export interface EntradaCuadre {
-  /** Lo vendido de contado, en dólares, calculado desde los precios */
+  /** Todo lo que salió del inventario hoy, en dólares */
   totalVendido: number
+  /**
+   * Lo que se fio hoy, en dólares.
+   *
+   * Se resta de lo vendido porque esa plata no entró: la mercancía salió y
+   * quedó como deuda. Sin esta resta, un día con fiado siempre daría faltante
+   * y el encargado acabaría ignorando el aviso de descuadre, que es peor que
+   * no tenerlo.
+   */
+  credito?: number
   /** Lo que entró, cada monto EN SU MONEDA (no convertido) */
   recibido: Recibido
   /** Tasas del día: cuántos Bs o pesos vale un dólar */
@@ -50,10 +59,14 @@ export interface LineaRecibido {
 
 export interface Cuadre {
   totalVendido: number
+  /** Lo fiado hoy */
+  credito: number
+  /** vendido − fiado: lo que de verdad tenía que entrar en la gaveta */
+  esperado: number
   lineas: LineaRecibido[]
   /** Todo lo recibido, ya en dólares */
   totalRecibido: number
-  /** recibido − vendido. Positivo sobra, negativo falta. */
+  /** recibido − esperado. Positivo sobra, negativo falta. */
   diferencia: number
   /** Margen que se considera redondeo y no descuadre */
   tolerancia: number
@@ -109,11 +122,15 @@ export function cuadrar(entrada: EntradaCuadre): Cuadre {
     2,
   )
   const totalVendido = redondear(entrada.totalVendido, 2)
-  const diferencia = redondear(totalRecibido - totalVendido, 2)
+  const credito = redondear(entrada.credito ?? 0, 2)
+  const esperado = redondear(totalVendido - credito, 2)
+  const diferencia = redondear(totalRecibido - esperado, 2)
   const tolerancia = toleranciaDeRedondeo(entrada.recibido, entrada.tasas)
 
   return {
     totalVendido,
+    credito,
+    esperado,
     lineas,
     totalRecibido,
     diferencia,

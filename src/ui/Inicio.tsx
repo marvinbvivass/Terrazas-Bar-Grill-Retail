@@ -151,7 +151,9 @@ function Boton({
 
 function Insignia({ children }: { children: React.ReactNode }) {
   return (
-    <span className="tabular rounded-full bg-white/90 px-2 py-0.5 font-mono text-[10.5px] font-black text-fondo">
+    // Texto oscuro, no `text-fondo`: la píldora es blanca y el fondo del tema
+    // también es claro, así que heredarlo la dejaría ilegible.
+    <span className="tabular rounded-full bg-white/95 px-2 py-0.5 font-mono text-[10.5px] font-black text-slate-900">
       {children}
     </span>
   )

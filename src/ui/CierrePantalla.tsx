@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { VentaDiaView } from './VentaDiaView'
+import { CierreDiaView } from './CierreDiaView'
 import { CierreView } from './CierreView'
 import type { Pos } from '../hooks/usePos'
 
@@ -28,7 +28,7 @@ export function CierrePantalla({ pos }: { pos: Pos }) {
         </Mitad>
       </div>
 
-      {parte === 'cargar' ? <VentaDiaView pos={pos} /> : <CierreView pos={pos} />}
+      {parte === 'cargar' ? <CierreDiaView pos={pos} /> : <CierreView pos={pos} />}
     </div>
   )
 }

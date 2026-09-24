@@ -1,4 +1,5 @@
 import { db, type Pendiente } from './db'
+import type { CierreDia } from '../domain/cierreDia'
 import type { Abono, Venta } from '../domain/types'
 
 /**
@@ -29,6 +30,8 @@ export interface Transporte {
   subirCatalogo(productoIds: string[]): Promise<void>
   /** Sube clientes de fiado creados en la caja. */
   subirClientes(clienteIds: string[]): Promise<void>
+  /** Sube las actas de cierre. Idempotente por `cierre.id`, que es el día. */
+  subirCierres(cierres: CierreDia[]): Promise<void>
   /** Baja el catálogo completo. Con pocos productos son unos kilobytes. */
   bajarSnapshot(): Promise<void>
 }
@@ -51,6 +54,9 @@ export const transporteLocal: Transporte = {
     /* sin backend todavía */
   },
   async subirClientes() {
+    /* sin backend todavía */
+  },
+  async subirCierres() {
     /* sin backend todavía */
   },
   async bajarSnapshot() {
@@ -78,6 +84,7 @@ export async function empujarCola(limite = 50): Promise<ResultadoEmpuje> {
   const abonos = pendientes.filter((p) => p.tipo === 'abono').map((p) => p.abono)
   const productos = pendientes.filter((p) => p.tipo === 'producto')
   const clientes = pendientes.filter((p) => p.tipo === 'cliente')
+  const cierres = pendientes.filter((p) => p.tipo === 'cierre')
 
   let aceptadas = 0
   let rechazadas = 0
@@ -96,10 +103,29 @@ export async function empujarCola(limite = 50): Promise<ResultadoEmpuje> {
       aceptadas += clientes.length
     }
 
+    // El acta va DESPUÉS de las ventas del día: si subiera antes y la conexión
+    // se cortara a la mitad, el servidor tendría el resumen de un día cuyas
+    // ventas todavía no conoce, y cualquier reporte daría números que no
+    // cuadran entre sí.
+    const subirActas = async () => {
+      if (!cierres.length) return
+      await transporte.subirCierres(cierres.map((p) => p.cierre))
+      await db.transaction('rw', [db.cierres, db.outbox], async () => {
+        for (const p of cierres) {
+          const guardado = await db.cierres.get(p.id)
+          if (guardado) await db.cierres.put({ ...guardado, sincronizadoEn: Date.now() })
+          await db.outbox.delete(p.id)
+        }
+      })
+      aceptadas += cierres.length
+    }
+
     const respuestas = [
       ...(ventas.length ? await transporte.subirVentas(ventas) : []),
       ...(abonos.length ? await transporte.subirAbonos(abonos) : []),
     ]
+
+    await subirActas()
 
     for (const r of respuestas) {
       if (r.aceptada) {

@@ -18,6 +18,8 @@ import type {
   UUID,
   Venta,
 } from '../domain/types'
+import type { CierreDia } from '../domain/cierreDia'
+import { idDeCierre } from '../domain/cierreDia'
 import { METODOS_PAGO, TASA_COP_INICIAL, TASA_VES_INICIAL, configuracionInicial } from './seed'
 
 /**
@@ -44,6 +46,9 @@ export type Pendiente =
   // base local en el momento del envío, así siempre sube la última versión.
   | { id: UUID; tipo: 'producto'; intentos: number; ultimoError: string | null; creadaEn: number }
   | { id: UUID; tipo: 'cliente'; intentos: number; ultimoError: string | null; creadaEn: number }
+  // El acta del día viaja entera: sus montos y tasas son de ese día y no se
+  // pueden releer de la base más tarde sin cambiar de valor.
+  | { id: string; tipo: 'cierre'; cierre: CierreDia; intentos: number; ultimoError: string | null; creadaEn: number }
 
 /** @deprecated se mantiene el nombre viejo para no romper importaciones */
 export type VentaPendiente = Pendiente
@@ -66,6 +71,7 @@ class LicoreriaDB extends Dexie {
   // Table y no EntityTable: el outbox guarda una unión discriminada y
   // el InsertType de EntityTable no la sabe estrechar.
   outbox!: Table<Pendiente, string>
+  cierres!: EntityTable<CierreDia, 'id'>
   config!: EntityTable<Config, 'clave'>
 
   constructor() {
@@ -87,6 +93,12 @@ class LicoreriaDB extends Dexie {
       abonos: 'id, dia, clienteId',
       outbox: 'id, creadaEn',
       config: 'clave',
+    })
+
+    // Versión 2: el acta del día. Dexie necesita una versión nueva para crear
+    // una tabla; las que ya existían no hay que repetirlas.
+    this.version(2).stores({
+      cierres: 'id, dia, cerradoEn',
     })
   }
 }
@@ -431,6 +443,49 @@ export async function anularVenta(ventaId: UUID): Promise<void> {
 
 export async function pendientesDeSubir(): Promise<number> {
   return db.outbox.count()
+}
+
+/**
+ * Guarda el acta del día y la pone en la cola de subida.
+ *
+ * El identificador es el día, así que volver a cerrar el mismo día sobrescribe
+ * el acta anterior en vez de dejar dos contradictorias. Las ventas del día se
+ * registran aparte, con `registrarVenta`, porque cada una tiene que mover
+ * existencias por su cuenta.
+ */
+export async function guardarCierreDia(cierre: CierreDia): Promise<void> {
+  await db.transaction('rw', [db.cierres, db.outbox], async () => {
+    await db.cierres.put(cierre)
+    await db.outbox.put({
+      id: cierre.id,
+      tipo: 'cierre',
+      cierre,
+      intentos: 0,
+      ultimoError: null,
+      creadaEn: Date.now(),
+    })
+  })
+}
+
+export async function cierreDelDia(dia: DiaNegocio): Promise<CierreDia | undefined> {
+  return db.cierres.get(idDeCierre(dia))
+}
+
+export async function cargarCierres(): Promise<CierreDia[]> {
+  return db.cierres.toArray()
+}
+
+/**
+ * Reabre un día para poder corregirlo.
+ *
+ * No borra el acta: le pone la marca de reabierta y la vuelve a subir. Un
+ * cierre que desaparece es un cierre que nadie puede auditar, y el número que
+ * vio el dueño dejaría de existir sin dejar rastro.
+ */
+export async function reabrirCierre(dia: DiaNegocio): Promise<void> {
+  const actual = await cierreDelDia(dia)
+  if (!actual) return
+  await guardarCierreDia({ ...actual, reabiertoEn: Date.now() })
 }
 
 export async function guardarTasa(moneda: MonedaCodigo, tasa: number): Promise<void> {

@@ -5,8 +5,11 @@ import {
   cambiarCantidad,
   cambiarUbicacion,
   carritoVacio,
+  construirPagosDelCierre,
   construirVentaContado,
   construirVentaCredito,
+  construirVentaCreditoSinLineas,
+  construirVentaDelDia,
   movimientosDeVenta,
   quitar,
   quitarPago,
@@ -15,6 +18,12 @@ import {
   type Carrito,
 } from '../domain/cart'
 import { calcularCierre, type Cierre } from '../domain/cierre'
+import {
+  construirCierreDia,
+  type CierreDia,
+  type CreditoOtorgado,
+} from '../domain/cierreDia'
+import type { Recibido } from '../domain/cuadre'
 import { construirAbono, resumirClientes, saldoDeCliente, ventasAbiertas, type PlanAbono } from '../domain/credito'
 import { hoy, inicioDe } from '../domain/dias'
 import type { Abono, Cliente, DiaNegocio, MonedaCodigo, Pago, Presentacion, Producto, UUID, Venta } from '../domain/types'
@@ -24,7 +33,10 @@ import {
   desactivarProducto as desactivarProductoDb,
   guardarProducto as guardarProductoDb,
   cargarSnapshot,
+  cierreDelDia,
   claveExistencia,
+  guardarCierreDia,
+  reabrirCierre,
   guardarCliente,
   guardarTasa,
   pedirAlmacenamientoPersistente,
@@ -68,6 +80,8 @@ async function prepararTransporte(): Promise<void> {
 export function usePos() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
   const [dia, setDia] = useState<DiaNegocio>(hoy())
+  /** El acta del día que se está mirando, si ya se cerró */
+  const [cierreDia, setCierreDia] = useState<CierreDia | null>(null)
   const [carrito, setCarrito] = useState<Carrito>(carritoVacio())
   const [ventas, setVentas] = useState<Venta[]>([])
   const [abonos, setAbonos] = useState<Abono[]>([])
@@ -352,6 +366,138 @@ export function usePos() {
     [snapshot, dia, clientes, aplicarSalidaDeStock, sincronizar],
   )
 
+  /**
+   * Cerrar el día: la operación entera, de una vez.
+   *
+   * Hace cuatro cosas que tienen que pasar juntas o no pasar:
+   *
+   *   1. Una venta por cada cliente al que se le fio, sin líneas. Son el saldo
+   *      que aparece en CXC.
+   *   2. UNA venta con todo lo que salió del inventario, cuyo total es solo lo
+   *      que se cobró (ver `construirVentaDelDia`).
+   *   3. El acta del día con los montos, las tasas y la diferencia.
+   *   4. Todo a la cola de subida.
+   *
+   * Los créditos van PRIMERO porque la venta del día necesita su id para
+   * anotarlos en el acta. Si algo falla a mitad, lo ya escrito se queda: son
+   * documentos válidos por sí solos y la cola los subirá igual. Perder la
+   * mitad de un cierre es peor que tener un cierre incompleto que se ve.
+   */
+  const cerrarDia = useCallback(
+    async (entrada: {
+      carrito: Carrito
+      recibido: Recibido
+      creditos: Array<{ clienteId: UUID; monto: number }>
+      nota?: string | null
+    }): Promise<CierreDia | null> => {
+      if (!snapshot) return null
+
+      const fecha = inicioDe(dia) + 12 * 3600_000
+      const datosBase = {
+        dia,
+        fecha,
+        usuarioId: snapshot.usuarioId,
+        tasas: snapshot.tasas,
+        creadaOffline: !navigator.onLine,
+      }
+
+      // 1 · Las deudas
+      const otorgados: CreditoOtorgado[] = []
+      for (const c of entrada.creditos) {
+        if (c.monto <= 0) continue
+        const cliente = clientes.find((x) => x.id === c.clienteId)
+        if (!cliente) continue
+        const folio = await siguienteFolio()
+        const venta = construirVentaCreditoSinLineas(
+          { ...datosBase, folioProvisional: folio },
+          c.clienteId,
+          c.monto,
+        )
+        await registrarVenta(venta, [])
+        setVentas((v) => [...v, venta])
+        otorgados.push({
+          clienteId: c.clienteId,
+          clienteNombre: cliente.nombre,
+          monto: c.monto,
+          ventaId: venta.id,
+        })
+      }
+
+      const totalCredito = otorgados.reduce((x, c) => x + c.monto, 0)
+
+      // 2 · Lo que salió del inventario
+      const t = totales(entrada.carrito)
+      let ventaDelDia: Venta | null = null
+      if (entrada.carrito.lineas.length > 0) {
+        const folio = await siguienteFolio()
+        const pagos = construirPagosDelCierre(
+          entrada.recibido,
+          snapshot.tasas,
+          snapshot.metodosPago,
+        )
+        ventaDelDia = construirVentaDelDia(
+          { ...entrada.carrito, pagos },
+          { ...datosBase, folioProvisional: folio },
+          totalCredito,
+        )
+        const movimientos = aplicarSalidaDeStock(ventaDelDia)
+        await registrarVenta(ventaDelDia, movimientos)
+        const registrada = ventaDelDia
+        setVentas((v) => [...v, registrada])
+      }
+
+      // 3 · El acta
+      const acta = construirCierreDia({
+        dia,
+        usuarioId: snapshot.usuarioId,
+        totalVendido: t.total,
+        unidades: t.unidades,
+        costo: t.costoTotal,
+        recibido: entrada.recibido,
+        creditos: otorgados,
+        tasas: snapshot.tasas,
+        nota: entrada.nota ?? null,
+      })
+      await guardarCierreDia(acta)
+      setCierreDia(acta)
+
+      setPendientes(await pendientesDeSubir())
+      setAviso({
+        texto: acta.cuadra ? 'Día cerrado y cuadrado' : 'Día cerrado con diferencia',
+        tono: acta.cuadra ? 'ok' : 'error',
+      })
+      void sincronizar(true)
+      return acta
+    },
+    [snapshot, dia, clientes, aplicarSalidaDeStock, sincronizar],
+  )
+
+  /*
+   * El acta se relee al cambiar de día. Sin esto, moverse de hoy a ayer
+   * seguiría mostrando el cierre de hoy y el encargado creería que ayer quedó
+   * cerrado cuando no lo está.
+   */
+  useEffect(() => {
+    let vivo = true
+    void (async () => {
+      const acta = await cierreDelDia(dia)
+      // Un acta reabierta cuenta como día abierto: se conserva para auditar,
+      // pero la pantalla tiene que dejar corregir.
+      if (vivo) setCierreDia(acta && !acta.reabiertoEn ? acta : null)
+    })()
+    return () => {
+      vivo = false
+    }
+  }, [dia])
+
+  const reabrirDia = useCallback(async () => {
+    await reabrirCierre(dia)
+    setCierreDia(null)
+    setPendientes(await pendientesDeSubir())
+    setAviso({ texto: 'Día reabierto: puedes corregir y volver a cerrar', tono: 'ok' })
+    void sincronizar(true)
+  }, [dia, sincronizar])
+
   const anular = useCallback(async (ventaId: UUID) => {
     await anularVenta(ventaId)
     const comercial = await cargarMovimientoComercial()
@@ -535,6 +681,9 @@ export function usePos() {
     desactivarProducto,
     recargarCatalogo,
     cobrar,
+    cerrarDia,
+    reabrirDia,
+    cierreDia,
     crearCliente,
     actualizarCliente,
     eliminarCliente,
