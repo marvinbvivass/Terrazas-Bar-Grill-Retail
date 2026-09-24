@@ -38,7 +38,7 @@ export function BarraSuperior({
 
   return (
     <>
-      <header className="pad-arriba shrink-0 border-b border-linea bg-panel">
+      <header className="pad-arriba shrink-0 border-b border-linea bg-panel/85 backdrop-blur-md">
         <div className="flex items-center gap-1 px-2 py-1.5">
           {onAtras ? (
             <button

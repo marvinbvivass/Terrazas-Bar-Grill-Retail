@@ -46,8 +46,14 @@ body,
   height: 100%;
 }
 
-body {
+html {
+  /* El color base va en <html> y no en <body>: el telón de fondo es un
+     ::before de body con z-index negativo, y un fondo opaco en body lo taparía. */
   background: var(--color-fondo);
+}
+
+body {
+  background: transparent;
   color: var(--color-tinta);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
@@ -66,6 +72,35 @@ body {
   position: fixed;
   inset: 0;
   width: 100%;
+}
+
+/*
+ * Telón de fondo.
+ *
+ * Va difuminado y oscurecido detrás de todo, para que las tarjetas del menú
+ * floten encima. Son dos capas: la foto del local y, debajo, un degradado.
+ *
+ * El degradado NO es decorativo, es el respaldo: mientras no exista
+ * `public/fondo.jpg` el navegador se come ese 404 sin pintar nada y queda el
+ * degradado, que se ve bien por sí solo. El día que pongas la foto del local
+ * ahí, aparece sola y no hay que tocar código.
+ *
+ * El recuadro se sale diez píxeles por cada lado a propósito: `blur()` difumina
+ * también el borde y, sin ese margen, se vería una franja clara alrededor.
+ */
+body::before {
+  content: '';
+  position: fixed;
+  top: -10px;
+  left: -10px;
+  width: calc(100% + 20px);
+  height: calc(100% + 20px);
+  z-index: -1;
+  background-image: url('/fondo.jpg'),
+    linear-gradient(160deg, #0d2a44 0%, #071626 55%, #0a2033 100%);
+  background-size: cover, cover;
+  background-position: center, center;
+  filter: blur(3px) brightness(0.55);
 }
 
 .pad-arriba {

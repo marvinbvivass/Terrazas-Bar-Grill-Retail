@@ -76,7 +76,12 @@ function Aplicacion({ rol }: { rol: Rol }) {
 
   return (
     <ProveedorMoneda tasas={pos.snapshot?.tasas ?? {}}>
-      <div className="flex h-full flex-col">
+      {/*
+        Solo el menú deja ver el telón de fondo. Las demás pantallas son listas
+        y formularios: con una foto difuminada por debajo se leen peor, y lo que
+        se busca ahí es el número, no el ambiente.
+      */}
+      <div className={`flex h-full flex-col ${vista === 'inicio' ? '' : 'bg-fondo'}`}>
         <BarraSuperior
           pos={pos}
           rol={rol}
