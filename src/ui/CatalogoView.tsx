@@ -190,7 +190,10 @@ function Editor({
 
   async function guardar() {
     setGuardando(true)
-    await pos.guardarProducto(armarProducto(f, CONTEXTO_CATALOGO))
+    // Las existencias solo se escriben al crear. Al editar no se tocan: el
+    // formulario las cargó al abrirse y guardarlas después resucitaría lo que
+    // se haya vendido mientras tanto.
+    await pos.guardarProducto(armarProducto(f, CONTEXTO_CATALOGO), { aplicarExistencias: esNuevo })
     setGuardando(false)
     onCerrar()
   }
@@ -379,22 +382,37 @@ function Editor({
 
         {/* --- Stock --- */}
         <Bloque titulo={esNuevo ? 'Cuánto tienes hoy' : 'Existencia'}>
-          <Campo etiqueta="En la sala" ayuda="Unidades en el anaquel">
-            <input
-              value={f.stockSala || ''}
-              onChange={(e) => set('stockSala', Number(e.target.value) || 0)}
-              inputMode="numeric"
-              className={`${entrada} text-right`}
-            />
-          </Campo>
-          <Campo etiqueta="En la nevera">
-            <input
-              value={f.stockNevera || ''}
-              onChange={(e) => set('stockNevera', Number(e.target.value) || 0)}
-              inputMode="numeric"
-              className={`${entrada} text-right`}
-            />
-          </Campo>
+          {esNuevo ? (
+            <>
+              <Campo etiqueta="En la sala" ayuda="Unidades en el anaquel">
+                <input
+                  value={f.stockSala || ''}
+                  onChange={(e) => set('stockSala', Number(e.target.value) || 0)}
+                  inputMode="numeric"
+                  className={`${entrada} text-right`}
+                />
+              </Campo>
+              <Campo etiqueta="En la nevera">
+                <input
+                  value={f.stockNevera || ''}
+                  onChange={(e) => set('stockNevera', Number(e.target.value) || 0)}
+                  inputMode="numeric"
+                  className={`${entrada} text-right`}
+                />
+              </Campo>
+            </>
+          ) : (
+            <div className="col-span-2 rounded-lg border border-linea bg-panel2 px-3 py-2.5">
+              <p className="text-[13.5px] font-semibold">
+                Sala {f.stockSala} · Nevera {f.stockNevera}
+              </p>
+              <p className="pt-1 text-[12.5px] leading-relaxed text-tinta2">
+                La existencia no se edita aquí. Sube con <b>Inventario → Recibir mercancía</b> y
+                baja al cerrar el día, y así cada movimiento deja constancia de cuándo, cuánto y
+                quién. Escribirla a mano dejaba botellas que el kardex no podía explicar.
+              </p>
+            </div>
+          )}
           <Campo etiqueta="Avisarme desde" ayuda="Cuando baje de aquí">
             <input
               value={f.stockMin || ''}
@@ -403,12 +421,6 @@ function Editor({
               className={`${entrada} text-right`}
             />
           </Campo>
-          {!esNuevo && (
-            <p className="col-span-2 text-[12.5px] text-ambar">
-              Ojo: cambiar estos números aquí es un ajuste directo de inventario, no una compra.
-              Lo correcto para una entrada de mercancía será el módulo de recepción.
-            </p>
-          )}
         </Bloque>
 
         {problemas.length > 0 && (

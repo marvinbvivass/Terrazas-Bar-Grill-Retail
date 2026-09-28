@@ -15,6 +15,7 @@ import { claveExistencia, db } from './db'
 import { movimientosDeVenta } from '../domain/cart'
 import { configuracionInicial } from './seed'
 import type { CierreDia } from '../domain/cierreDia'
+import type { Recepcion } from '../domain/recepcion'
 import type { Abono, Venta } from '../domain/types'
 import type { RespuestaSync, Transporte } from './sync'
 
@@ -331,9 +332,22 @@ export async function subirCierres(cierres: CierreDia[]): Promise<void> {
   await lote.commit()
 }
 
+/** Sube las entradas de mercancía con todos sus renglones */
+export async function subirRecepciones(recepciones: Recepcion[]): Promise<void> {
+  if (recepciones.length === 0) return
+  const lote = writeBatch(fsdb())
+  for (const r of recepciones) {
+    lote.set(doc(fsdb(), 'recepciones', r.id), limpiar({ ...r, sincronizadaEn: Date.now() }))
+  }
+  await lote.commit()
+}
+
 export const transporteFirestore: Transporte = {
   async subirCierres(cierres) {
     await subirCierres(cierres)
+  },
+  async subirRecepciones(recepciones) {
+    await subirRecepciones(recepciones)
   },
   async subirCatalogo(productoIds) {
     await subirConfiguracionSiFalta()

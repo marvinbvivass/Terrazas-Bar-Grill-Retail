@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { HojaRecepcion } from './HojaRecepcion'
 import { formato, redondear } from '../domain/money'
 import type { Pos } from '../hooks/usePos'
 import { UBICACION_FRIO, UBICACION_VENTA_DEFECTO } from '../data/seed'
@@ -7,17 +8,20 @@ import { Precio } from './moneda'
 type Orden = 'nombre' | 'menos' | 'valor'
 
 /**
- * Inventario: qué hay y dónde.
+ * Inventario: qué hay, dónde, y por dónde entra.
  *
- * De solo lectura por ahora, y conviene decirlo en voz alta: las existencias se
- * mueven solas al cargar la venta del día y al dar de alta un producto. Ajustar
- * a mano —conteo físico, mermas, recepción de mercancía— escribe movimientos de
- * kardex que además tienen que subir al servidor, y eso es una pieza aparte que
- * todavía no está.
+ * El stock sube al recibir mercancía y baja al cerrar el día. Las dos cosas
+ * dejan asiento de kardex con fecha, cantidad, costo y quién — que es lo que
+ * permite saber si faltan botellas porque se rompieron, se las llevó alguien o
+ * nunca llegaron.
+ *
+ * Lo que todavía no hay: mermas, conteo físico y traslados entre el anaquel y
+ * la nevera.
  */
 export function InventarioView({ pos }: { pos: Pos }) {
   const [busqueda, setBusqueda] = useState('')
   const [orden, setOrden] = useState<Orden>('menos')
+  const [recibiendo, setRecibiendo] = useState(false)
   const s = pos.snapshot
 
   const filas = useMemo(() => {
@@ -153,10 +157,22 @@ export function InventarioView({ pos }: { pos: Pos }) {
         )}
 
         <p className="px-1 pt-4 text-center text-[12px] leading-relaxed text-apagado">
-          Las existencias bajan solas al cargar la venta del día. Ajustar a mano (conteo, mermas,
-          recepción) todavía no está.
+          El stock sube al recibir mercancía y baja al cerrar el día. Mermas, conteo físico y
+          traslados a la nevera todavía no están.
         </p>
       </div>
+
+      <div className="shrink-0 border-t border-linea bg-panel px-3 py-2.5">
+        <button
+          onClick={() => setRecibiendo(true)}
+          disabled={s.productos.length === 0}
+          className="w-full rounded-xl bg-cobre py-3.5 text-[16px] font-bold text-fondo disabled:opacity-40"
+        >
+          + Recibir mercancía
+        </button>
+      </div>
+
+      {recibiendo && <HojaRecepcion pos={pos} onCerrar={() => setRecibiendo(false)} />}
     </div>
   )
 }

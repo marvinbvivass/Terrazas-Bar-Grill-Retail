@@ -1,5 +1,6 @@
 import { db, type Pendiente } from './db'
 import type { CierreDia } from '../domain/cierreDia'
+import type { Recepcion } from '../domain/recepcion'
 import type { Abono, Venta } from '../domain/types'
 
 /**
@@ -32,6 +33,8 @@ export interface Transporte {
   subirClientes(clienteIds: string[]): Promise<void>
   /** Sube las actas de cierre. Idempotente por `cierre.id`, que es el día. */
   subirCierres(cierres: CierreDia[]): Promise<void>
+  /** Sube las entradas de mercancía. Idempotente por `recepcion.id`. */
+  subirRecepciones(recepciones: Recepcion[]): Promise<void>
   /** Baja el catálogo completo. Con pocos productos son unos kilobytes. */
   bajarSnapshot(): Promise<void>
 }
@@ -57,6 +60,9 @@ export const transporteLocal: Transporte = {
     /* sin backend todavía */
   },
   async subirCierres() {
+    /* sin backend todavía */
+  },
+  async subirRecepciones() {
     /* sin backend todavía */
   },
   async bajarSnapshot() {
@@ -85,6 +91,7 @@ export async function empujarCola(limite = 50): Promise<ResultadoEmpuje> {
   const productos = pendientes.filter((p) => p.tipo === 'producto')
   const clientes = pendientes.filter((p) => p.tipo === 'cliente')
   const cierres = pendientes.filter((p) => p.tipo === 'cierre')
+  const recepciones = pendientes.filter((p) => p.tipo === 'recepcion')
 
   let aceptadas = 0
   let rechazadas = 0
@@ -118,6 +125,21 @@ export async function empujarCola(limite = 50): Promise<ResultadoEmpuje> {
         }
       })
       aceptadas += cierres.length
+    }
+
+    // Las entradas de mercancía van junto al catálogo y antes que las ventas:
+    // una venta que descuenta stock que el servidor no sabe que entró deja
+    // existencias negativas arriba hasta que alguien las mire.
+    if (recepciones.length) {
+      await transporte.subirRecepciones(recepciones.map((p) => p.recepcion))
+      await db.transaction('rw', [db.recepciones, db.outbox], async () => {
+        for (const p of recepciones) {
+          const guardada = await db.recepciones.get(p.id)
+          if (guardada) await db.recepciones.put({ ...guardada, sincronizadaEn: Date.now() })
+          await db.outbox.delete(p.id)
+        }
+      })
+      aceptadas += recepciones.length
     }
 
     const respuestas = [

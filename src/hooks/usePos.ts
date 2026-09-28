@@ -24,8 +24,15 @@ import {
   type CreditoOtorgado,
 } from '../domain/cierreDia'
 import type { Recibido } from '../domain/cuadre'
+import {
+  construirRecepcion,
+  lineaDeRecepcion,
+  type EntradaLineaRecepcion,
+  type Recepcion,
+} from '../domain/recepcion'
 import { construirAbono, resumirClientes, saldoDeCliente, ventasAbiertas, type PlanAbono } from '../domain/credito'
 import { hoy, inicioDe } from '../domain/dias'
+import { formato } from '../domain/money'
 import type { Abono, Cliente, DiaNegocio, MonedaCodigo, Pago, Presentacion, Producto, UUID, Venta } from '../domain/types'
 import {
   anularVenta,
@@ -34,6 +41,7 @@ import {
   guardarProducto as guardarProductoDb,
   cargarSnapshot,
   cierreDelDia,
+  registrarRecepcion,
   claveExistencia,
   guardarCierreDia,
   reabrirCierre,
@@ -553,9 +561,53 @@ export function usePos() {
     setPendientes(await pendientesDeSubir())
   }, [])
 
+  /**
+   * Recibir mercancía del proveedor.
+   *
+   * Sube el stock, deja el asiento de kardex y recalcula el costo promedio, las
+   * tres cosas en una transacción. Después se relee el catálogo porque el costo
+   * promedio cambió y el margen que se ve en pantalla sale de ahí.
+   */
+  const recibirMercancia = useCallback(
+    async (entrada: {
+      lineas: EntradaLineaRecepcion[]
+      proveedor?: string | null
+      documento?: string | null
+      nota?: string | null
+    }): Promise<Recepcion | null> => {
+      if (!snapshot) return null
+      const utiles = entrada.lineas.filter((l) => l.cantidad > 0)
+      if (utiles.length === 0) return null
+
+      const recepcion = construirRecepcion(utiles.map(lineaDeRecepcion), {
+        dia,
+        fecha: inicioDe(dia) + 12 * 3600_000,
+        usuarioId: snapshot.usuarioId,
+        proveedor: entrada.proveedor ?? null,
+        documento: entrada.documento ?? null,
+        nota: entrada.nota ?? null,
+        creadaOffline: !navigator.onLine,
+      })
+
+      await registrarRecepcion(recepcion)
+      await recargarCatalogo()
+      setPendientes(await pendientesDeSubir())
+      setAviso({
+        texto: `Entraron ${recepcion.unidades} unidades por ${formato(recepcion.total, 'USD')}`,
+        tono: 'ok',
+      })
+      void sincronizar(true)
+      return recepcion
+    },
+    [snapshot, dia, recargarCatalogo, sincronizar],
+  )
+
   const guardarProducto = useCallback(
-    async (armado: Parameters<typeof guardarProductoDb>[0]) => {
-      await guardarProductoDb(armado)
+    async (
+      armado: Parameters<typeof guardarProductoDb>[0],
+      opciones?: Parameters<typeof guardarProductoDb>[1],
+    ) => {
+      await guardarProductoDb(armado, opciones)
       await recargarCatalogo()
       setAviso({ texto: `${armado.producto.nombreCorto} guardado`, tono: 'ok' })
       void sincronizar(true)
@@ -690,6 +742,7 @@ export function usePos() {
     recargarCatalogo,
     cobrar,
     cerrarDia,
+    recibirMercancia,
     reabrirDia,
     cierreDia,
     crearCliente,

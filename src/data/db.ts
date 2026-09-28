@@ -19,6 +19,8 @@ import type {
   Venta,
 } from '../domain/types'
 import type { CierreDia } from '../domain/cierreDia'
+import type { Recepcion } from '../domain/recepcion'
+import { costoPromedioTrasEntrada, entradaPorProducto, movimientosDeRecepcion } from '../domain/recepcion'
 import { idDeCierre } from '../domain/cierreDia'
 import { METODOS_PAGO, TASA_COP_INICIAL, TASA_VES_INICIAL, configuracionInicial } from './seed'
 
@@ -49,6 +51,7 @@ export type Pendiente =
   // El acta del día viaja entera: sus montos y tasas son de ese día y no se
   // pueden releer de la base más tarde sin cambiar de valor.
   | { id: string; tipo: 'cierre'; cierre: CierreDia; intentos: number; ultimoError: string | null; creadaEn: number }
+  | { id: UUID; tipo: 'recepcion'; recepcion: Recepcion; intentos: number; ultimoError: string | null; creadaEn: number }
 
 /** @deprecated se mantiene el nombre viejo para no romper importaciones */
 export type VentaPendiente = Pendiente
@@ -72,6 +75,7 @@ class LicoreriaDB extends Dexie {
   // el InsertType de EntityTable no la sabe estrechar.
   outbox!: Table<Pendiente, string>
   cierres!: EntityTable<CierreDia, 'id'>
+  recepciones!: EntityTable<Recepcion, 'id'>
   config!: EntityTable<Config, 'clave'>
 
   constructor() {
@@ -99,6 +103,11 @@ class LicoreriaDB extends Dexie {
     // una tabla; las que ya existían no hay que repetirlas.
     this.version(2).stores({
       cierres: 'id, dia, cerradoEn',
+    })
+
+    // Versión 3: la entrada de mercancía.
+    this.version(3).stores({
+      recepciones: 'id, dia, fecha',
     })
   }
 }
@@ -355,7 +364,22 @@ export async function guardarProducto(armado: {
   codigos: CodigoBarras[]
   precios: Precio[]
   existencias: Existencia[]
-}): Promise<void> {
+}, opciones: { aplicarExistencias?: boolean } = {}): Promise<void> {
+  /*
+   * Las existencias solo se escriben al CREAR el producto.
+   *
+   * Al editar no se tocan, y esto arregla un fallo silencioso: el formulario
+   * carga la existencia al abrirse, así que si alguien lo abría a las seis de
+   * la tarde (100 botellas), se cerraba el día vendiendo 20, y después guardaba
+   * el formulario, la existencia volvía a 100. Las botellas vendidas
+   * reaparecían en el anaquel sin que nadie lo notara.
+   *
+   * Además, escribir la existencia a mano no dejaba asiento de kardex: no había
+   * forma de saber si faltaban botellas porque se rompieron, se las llevó
+   * alguien o nunca llegaron. Ahora el stock se mueve por recepciones y ventas,
+   * que sí dejan rastro.
+   */
+  const aplicarExistencias = opciones.aplicarExistencias !== false
   await db.transaction(
     'rw',
     [db.productos, db.presentaciones, db.codigos, db.precios, db.existencias, db.outbox],
@@ -375,8 +399,10 @@ export async function guardarProducto(armado: {
       await db.presentaciones.bulkPut(armado.presentaciones)
       await db.codigos.bulkPut(armado.codigos)
       await db.precios.bulkPut(armado.precios)
-      for (const e of armado.existencias) {
-        await db.existencias.put({ ...e, id: claveExistencia(e.productoId, e.ubicacionId) })
+      if (aplicarExistencias) {
+        for (const e of armado.existencias) {
+          await db.existencias.put({ ...e, id: claveExistencia(e.productoId, e.ubicacionId) })
+        }
       }
 
       await db.outbox.put({
@@ -465,6 +491,86 @@ export async function guardarCierreDia(cierre: CierreDia): Promise<void> {
       creadaEn: Date.now(),
     })
   })
+}
+
+/**
+ * Registra una entrada de mercancía.
+ *
+ * Todo junto o nada: el documento, sus asientos de kardex, las existencias
+ * sumadas y el costo promedio recalculado. Si la mercancía entrara sin su
+ * asiento, el anaquel tendría botellas que el kardex no puede explicar.
+ *
+ * El costo promedio se actualiza UNA vez por producto contra el total que
+ * entró, no renglón a renglón: un mismo producto puede llegar en dos renglones
+ * —una caja al anaquel y un six-pack a la nevera— y hacerlo por partes daría un
+ * costo distinto según el orden en que se tecleó.
+ */
+export async function registrarRecepcion(recepcion: Recepcion): Promise<void> {
+  const movimientos = movimientosDeRecepcion(recepcion)
+  const porProducto = entradaPorProducto(recepcion)
+
+  await db.transaction(
+    'rw',
+    [db.recepciones, db.movimientos, db.existencias, db.productos, db.outbox],
+    async () => {
+      await db.recepciones.put(recepcion)
+      await db.movimientos.bulkPut(movimientos)
+
+      for (const m of movimientos) {
+        const id = claveExistencia(m.productoId, m.ubicacionId)
+        const actual = await db.existencias.get(id)
+        await db.existencias.put({
+          id,
+          productoId: m.productoId,
+          ubicacionId: m.ubicacionId,
+          cantidadBase: (actual?.cantidadBase ?? 0) + m.cantidadBase,
+        })
+      }
+
+      for (const [productoId, entrada] of porProducto) {
+        const producto = await db.productos.get(productoId)
+        if (!producto) continue
+
+        // El stock ANTERIOR a esta entrada, sumando todas las ubicaciones: el
+        // costo promedio es del producto, no de un anaquel.
+        const todas = await db.existencias.where('productoId').equals(productoId).toArray()
+        const despues = todas.reduce((x, e) => x + e.cantidadBase, 0)
+        const antes = despues - entrada.cantidadBase
+
+        await db.productos.put({
+          ...producto,
+          costoPromedio: costoPromedioTrasEntrada(
+            antes,
+            producto.costoPromedio,
+            entrada.cantidadBase,
+            entrada.costoPromedioEntrada,
+          ),
+        })
+
+        // El producto cambió de costo: que suba también.
+        await db.outbox.put({
+          id: productoId,
+          tipo: 'producto',
+          intentos: 0,
+          ultimoError: null,
+          creadaEn: Date.now(),
+        })
+      }
+
+      await db.outbox.put({
+        id: recepcion.id,
+        tipo: 'recepcion',
+        recepcion,
+        intentos: 0,
+        ultimoError: null,
+        creadaEn: Date.now(),
+      })
+    },
+  )
+}
+
+export async function cargarRecepciones(limite = 50): Promise<Recepcion[]> {
+  return db.recepciones.orderBy('fecha').reverse().limit(limite).toArray()
 }
 
 export async function cierreDelDia(dia: DiaNegocio): Promise<CierreDia | undefined> {

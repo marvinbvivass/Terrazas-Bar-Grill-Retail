@@ -102,6 +102,16 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Entradas de mercancía. No se borran: si llegó mal, se corrige con otra
+    // entrada, igual que con las ventas. Borrar una compra dejaría botellas en
+    // el anaquel que el kardex no puede explicar.
+    match /recepciones/{id} {
+      allow read:   if sesion();
+      allow create: if sesion();
+      allow update: if sesion();
+      allow delete: if false;
+    }
+
     match /movimientos/{id} {
       allow read:   if sesion();
       allow create: if sesion();
