@@ -478,13 +478,26 @@ export async function cargarCierres(): Promise<CierreDia[]> {
 /**
  * Reabre un día para poder corregirlo.
  *
- * No borra el acta: le pone la marca de reabierta y la vuelve a subir. Un
- * cierre que desaparece es un cierre que nadie puede auditar, y el número que
- * vio el dueño dejaría de existir sin dejar rastro.
+ * Dos cosas, y la segunda es la que importa:
+ *
+ * 1. El acta NO se borra: se marca como reabierta y se vuelve a subir. Un
+ *    cierre que desaparece es un cierre que nadie puede auditar.
+ *
+ * 2. Se ANULAN las ventas que ese cierre creó —la del día y las de crédito— y
+ *    con ellas vuelve la mercancía al anaquel. Sin este paso, reabrir y cerrar
+ *    otra vez registraba una segunda venta con las mismas botellas: el stock se
+ *    descontaba dos veces, el día aparecía vendiendo el doble y el cliente
+ *    quedaba debiendo dos veces lo mismo.
  */
 export async function reabrirCierre(dia: DiaNegocio): Promise<void> {
   const actual = await cierreDelDia(dia)
   if (!actual) return
+
+  const aAnular = [actual.ventaDelDiaId, ...actual.creditos.map((c) => c.ventaId)].filter(
+    (id): id is UUID => typeof id === 'string' && id.length > 0,
+  )
+  for (const id of aAnular) await anularVenta(id)
+
   await guardarCierreDia({ ...actual, reabiertoEn: Date.now() })
 }
 

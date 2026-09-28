@@ -121,12 +121,34 @@ export function cambiarUbicacion(carrito: Carrito, lineaId: UUID, ubicacionId: U
  * 36 botellas, la lista de mayor se activa sola y las 36 se recalculan, no solo
  * las 6 nuevas.
  */
+export interface OpcionesRecalculo {
+  /**
+   * Aplicar los escalones por cantidad (las listas con `cantidadMin`).
+   *
+   * En el mostrador va en `true`: el cliente que se lleva 36 botellas de una
+   * vez tiene derecho al precio de mayor, y la lista se activa sola.
+   *
+   * En el CIERRE DEL DÍA va en `false`, y esto no es un detalle: allí el
+   * carrito no es la compra de un cliente sino la suma de toda la jornada. Con
+   * los escalones activos, un día en que se vendieron 200 botellas de una en
+   * una se cobraría entero al precio de mayor, porque el motor solo ve "200
+   * unidades del mismo producto". El negocio declararía un 20% menos de venta
+   * del que hizo y el cuadre marcaría un sobrante enorme todos los días.
+   *
+   * En el cierre, una venta al por mayor se registra eligiendo la presentación
+   * de caja o de six-pack, que tienen su propio precio.
+   */
+  escalonesPorCantidad?: boolean
+}
+
 export function recalcular(
   carrito: Carrito,
   presentaciones: Map<UUID, Presentacion>,
   catalogo: CatalogoPrecios,
   momento: number = Date.now(),
+  opciones: OpcionesRecalculo = {},
 ): Carrito {
+  const conEscalones = opciones.escalonesPorCantidad !== false
   const acumuladoPorProducto = new Map<UUID, number>()
   for (const l of carrito.lineas) {
     const p = presentaciones.get(l.presentacionId)
@@ -143,7 +165,10 @@ export function recalcular(
     const resuelto = resolverPrecio(
       {
         presentacionId: l.presentacionId,
-        cantidadBase: acumuladoPorProducto.get(l.productoId) ?? cantidadBase,
+        // Con los escalones apagados se manda 0: ninguna lista con
+        // `cantidadMin` llega a aplicar, y queda el precio de anaquel o de
+        // nevera, que es lo correcto para un agregado del día.
+        cantidadBase: conEscalones ? (acumuladoPorProducto.get(l.productoId) ?? cantidadBase) : 0,
         ubicacionId: l.ubicacionId,
         tipoCliente: carrito.tipoCliente,
         momento,

@@ -80,6 +80,15 @@ export interface CierreDia {
   /** vendido − costo */
   margen: number
 
+  /**
+   * La venta que se creó con todo lo que salió del inventario.
+   *
+   * Se guarda para poder deshacerla al reabrir. Sin esto, reabrir y volver a
+   * cerrar registraba OTRA venta con las mismas botellas: el stock se
+   * descontaba dos veces y el día aparecía vendiendo el doble.
+   */
+  ventaDelDiaId: UUID | null
+
   nota: string | null
   /** Cuándo se reabrió, si se reabrió. El acta nunca se borra. */
   reabiertoEn: number | null
@@ -99,6 +108,7 @@ export interface EntradaCierreDia {
   recibido: Recibido
   creditos: CreditoOtorgado[]
   tasas: Record<string, number>
+  ventaDelDiaId?: UUID | null
   nota?: string | null
   /** Inyectable para las pruebas */
   ahora?: number
@@ -145,6 +155,7 @@ export function construirCierreDia(e: EntradaCierreDia): CierreDia {
     unidades: redondear(e.unidades, 3),
     costo,
     margen: redondear(totalVendido - costo, 2),
+    ventaDelDiaId: e.ventaDelDiaId ?? null,
     nota: e.nota ?? null,
     reabiertoEn: null,
     sincronizadoEn: null,

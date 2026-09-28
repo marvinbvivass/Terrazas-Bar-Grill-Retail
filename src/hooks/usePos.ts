@@ -456,6 +456,7 @@ export function usePos() {
         recibido: entrada.recibido,
         creditos: otorgados,
         tasas: snapshot.tasas,
+        ventaDelDiaId: ventaDelDia?.id ?? null,
         nota: entrada.nota ?? null,
       })
       await guardarCierreDia(acta)
@@ -492,6 +493,13 @@ export function usePos() {
 
   const reabrirDia = useCallback(async () => {
     await reabrirCierre(dia)
+    // Reabrir anula las ventas de ese cierre y devuelve la mercancía, así que
+    // hay que releer: si no, la pantalla seguiría mostrando el stock de
+    // después de vender y el encargado cargaría el día sobre datos viejos.
+    const comercial = await cargarMovimientoComercial()
+    setVentas(comercial.ventas)
+    setAbonos(comercial.abonos)
+    setSnapshot(await cargarSnapshot())
     setCierreDia(null)
     setPendientes(await pendientesDeSubir())
     setAviso({ texto: 'Día reabierto: puedes corregir y volver a cerrar', tono: 'ok' })

@@ -50,7 +50,15 @@ export function CierreDiaView({ pos }: { pos: Pos }) {
 
   const carrito = useMemo(() => {
     if (!s) return bruto
-    return recalcular(bruto, s.presentacionesPorId, { listas: s.listas, precios: s.precios }, momento)
+    // Escalones por cantidad APAGADOS: este carrito es el día entero, no la
+    // compra de un cliente. Ver `OpcionesRecalculo` en cart.ts.
+    return recalcular(
+      bruto,
+      s.presentacionesPorId,
+      { listas: s.listas, precios: s.precios },
+      momento,
+      { escalonesPorCantidad: false },
+    )
   }, [bruto, s, momento])
 
   const t = useMemo(() => totales(carrito), [carrito])
@@ -511,6 +519,7 @@ function precioDe(
     s.presentacionesPorId,
     { listas: s.listas, precios: s.precios },
     momento,
+    { escalonesPorCantidad: false },
   )
   return listo.lineas[0]?.precioUnitario ?? 0
 }
