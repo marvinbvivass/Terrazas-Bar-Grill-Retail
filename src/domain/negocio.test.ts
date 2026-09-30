@@ -126,6 +126,79 @@ describe('el precio que se cobra', () => {
   })
 })
 
+describe('el día en que se vende por caja', () => {
+  /** El carrito del cierre: sueltas y bultos del mismo producto a la vez */
+  function diaMixto(sueltas: number, cajas: number) {
+    let c = carritoVacio()
+    if (sueltas > 0) {
+      c = agregar(c, {
+        producto: POLAR,
+        presentacion: BOTELLA,
+        ubicacionId: SALA.id,
+        cantidad: sueltas,
+      })
+    }
+    if (cajas > 0) {
+      c = agregar(c, {
+        producto: POLAR,
+        presentacion: CAJA36,
+        ubicacionId: SALA.id,
+        cantidad: cajas,
+      })
+    }
+    return recalcular(c, PRESENTACIONES_MAPA, CATALOGO, Date.parse(`${DIA}T12:00:00Z`), {
+      escalonesPorCantidad: false,
+    })
+  }
+
+  it('las cajas y las sueltas conviven como renglones distintos', () => {
+    const c = diaMixto(120, 3)
+    expect(c.lineas).toHaveLength(2)
+    // Antes la línea se buscaba solo por producto y las cajas pisaban a las
+    // sueltas: el día entero se perdía menos el último renglón tecleado.
+    const sueltas = c.lineas.find((l) => l.presentacionId === BOTELLA.id)
+    const cajas = c.lineas.find((l) => l.presentacionId === CAJA36.id)
+    expect(sueltas?.cantidad).toBe(120)
+    expect(cajas?.cantidad).toBe(3)
+  })
+
+  it('cada presentación se cobra a SU precio, no al de la unidad por el factor', () => {
+    const c = diaMixto(120, 3)
+    const t = totales(c)
+    // 120 sueltas a 1,00 + 3 cajas a 30,00. Si la caja se cobrara como 36
+    // unidades sueltas serían 36, no 30: al mayorista se le cobraría de más.
+    expect(t.total).toBe(120 + 90)
+  })
+
+  it('del anaquel salen las botellas de las cajas, no las cajas', () => {
+    const t = totales(diaMixto(120, 3))
+    // 120 sueltas + 3 × 36
+    expect(t.unidades).toBe(228)
+  })
+
+  it('el costo cuenta las botellas de dentro de la caja', () => {
+    const t = totales(diaMixto(0, 3))
+    // 108 botellas a 0,60 de costo
+    expect(t.costoTotal).toBe(64.8)
+  })
+
+  it('el día cuadra con lo que se cobró por las cajas', () => {
+    const t = totales(diaMixto(120, 3))
+    const acta = construirCierreDia({
+      dia: DIA,
+      usuarioId: 'u',
+      totalVendido: t.total,
+      unidades: t.unidades,
+      costo: t.costoTotal,
+      recibido: { USD: 210 },
+      creditos: [],
+      tasas: TASAS,
+    })
+    expect(acta.cuadra).toBe(true)
+    expect(acta.unidades).toBe(228)
+  })
+})
+
 describe('un día normal, todo de contado', () => {
   it('cuadra cuando lo contado en la gaveta es lo que se vendió', () => {
     const carrito = vender(45) // 45 botellas a 1,00

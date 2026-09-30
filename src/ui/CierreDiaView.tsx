@@ -10,7 +10,7 @@ import {
 import { cuadrar, type Recibido } from '../domain/cuadre'
 import { MONEDAS, formato, formatoNumero, parsearMonto } from '../domain/money'
 import { inicioDe } from '../domain/dias'
-import type { MonedaCodigo, Producto, UUID } from '../domain/types'
+import type { MonedaCodigo, Presentacion, Producto, UUID } from '../domain/types'
 import { UBICACION_VENTA_DEFECTO } from '../data/seed'
 import type { Pos } from '../hooks/usePos'
 import { Precio } from './moneda'
@@ -63,9 +63,27 @@ export function CierreDiaView({ pos }: { pos: Pos }) {
 
   const t = useMemo(() => totales(carrito), [carrito])
 
+  /*
+   * Dos mapas y no uno.
+   *
+   * `porPresentacion` es lo que se teclea: tres cajas son tres, no ciento
+   * ocho. `cantidadDe` va en unidades base y es lo que decide si un producto
+   * esta "cargado", para ordenarlo arriba y para el filtro. Con un solo mapa
+   * habria que elegir entre mostrar mal la casilla o filtrar mal la lista.
+   */
+  const cantidadPorPresentacion = useMemo(() => {
+    const m = new Map<UUID, number>()
+    for (const l of carrito.lineas) {
+      m.set(l.presentacionId, (m.get(l.presentacionId) ?? 0) + l.cantidad)
+    }
+    return m
+  }, [carrito])
+
   const cantidadDe = useMemo(() => {
     const m = new Map<UUID, number>()
-    for (const l of carrito.lineas) m.set(l.productoId, (m.get(l.productoId) ?? 0) + l.cantidad)
+    for (const l of carrito.lineas) {
+      m.set(l.productoId, (m.get(l.productoId) ?? 0) + l.cantidadBase)
+    }
     return m
   }, [carrito])
 
@@ -133,16 +151,23 @@ export function CierreDiaView({ pos }: { pos: Pos }) {
   // Día ya cerrado: se muestra el acta, no el formulario.
   if (pos.cierreDia) return <ActaCierre pos={pos} acta={pos.cierreDia} />
 
-  function poner(producto: Producto, cantidad: number) {
-    const base = snap.presentacionesPorProducto.get(producto.id)?.find((x) => x.esBase)
-    if (!base) return
+  /**
+   * Pone la cantidad vendida de UNA presentacion.
+   *
+   * La linea se busca por producto Y presentacion: un mismo producto puede
+   * llevar dos renglones el mismo dia --ciento veinte sueltas y tres cajas-- y
+   * buscando solo por producto, las cajas sobrescribirian a las sueltas.
+   */
+  function poner(producto: Producto, presentacion: Presentacion, cantidad: number) {
     setBruto((carro) => {
-      const linea = carro.lineas.find((l) => l.productoId === producto.id)
+      const linea = carro.lineas.find(
+        (l) => l.productoId === producto.id && l.presentacionId === presentacion.id,
+      )
       if (linea) return cambiarCantidad(carro, linea.id, cantidad)
       if (cantidad <= 0) return carro
       return agregar(carro, {
         producto,
-        presentacion: base,
+        presentacion,
         ubicacionId: UBICACION_VENTA_DEFECTO,
         cantidad,
       })
@@ -205,10 +230,11 @@ export function CierreDiaView({ pos }: { pos: Pos }) {
                   <FilaProducto
                     key={p.id}
                     producto={p}
-                    cantidad={cantidadDe.get(p.id) ?? 0}
-                    precio={precioDe(p, snap, momento)}
+                    presentaciones={snap.presentacionesPorProducto.get(p.id) ?? []}
+                    cantidadDe={(presId) => cantidadPorPresentacion.get(presId) ?? 0}
+                    precioDe={(pres) => precioDe(p, pres, snap, momento)}
                     stock={pos.stockDe(p.id, UBICACION_VENTA_DEFECTO)}
-                    onCantidad={(n) => poner(p, n)}
+                    onCantidad={(pres, n) => poner(p, pres, n)}
                   />
                 ))}
               </div>
@@ -495,12 +521,15 @@ function PasoDinero({
   )
 }
 
-function precioDe(p: Producto, s: NonNullable<Pos['snapshot']>, momento: number): number {
-  const base = s.presentacionesPorProducto.get(p.id)?.find((x) => x.esBase)
-  if (!base) return 0
+function precioDe(
+  p: Producto,
+  presentacion: Presentacion,
+  s: NonNullable<Pos['snapshot']>,
+  momento: number,
+): number {
   const conLinea = agregar(carritoVacio(), {
     producto: p,
-    presentacion: base,
+    presentacion,
     ubicacionId: UBICACION_VENTA_DEFECTO,
     cantidad: 1,
   })
@@ -516,58 +545,135 @@ function precioDe(p: Producto, s: NonNullable<Pos['snapshot']>, momento: number)
 
 function FilaProducto({
   producto,
-  cantidad,
-  precio,
+  presentaciones,
+  cantidadDe,
+  precioDe,
   stock,
   onCantidad,
 }: {
   producto: Producto
-  cantidad: number
-  precio: number
+  presentaciones: Presentacion[]
+  cantidadDe: (presentacionId: UUID) => number
+  precioDe: (presentacion: Presentacion) => number
   stock: number
-  onCantidad: (n: number) => void
+  onCantidad: (presentacion: Presentacion, cantidad: number) => void
 }) {
+  const base = presentaciones.find((x) => x.esBase)
+  const bultos = presentaciones.filter((x) => !x.esBase && x.activo && x.permiteVenta)
+
+  const cantidadBase = base ? cantidadDe(base.id) : 0
+  const enBultos = bultos.reduce((s, b) => s + cantidadDe(b.id) * b.factor, 0)
+  const total = cantidadBase + enBultos
+
+  /*
+   * Los bultos aparecen solos si ya tienen cantidad; si no, hay que pedirlos.
+   *
+   * Mostrar siempre una casilla por presentacion llenaria la pantalla de
+   * campos vacios: la inmensa mayoria de los dias se vende por unidades y las
+   * cajas son la excepcion.
+   */
+  const [abierto, setAbierto] = useState(enBultos > 0)
+  if (!base) return null
+
   return (
     <div
-      className={`flex items-center gap-2 rounded-xl border px-2.5 py-2 ${
-        cantidad > 0 ? 'border-cobre/60 bg-cobre/[0.07]' : 'border-linea bg-panel'
+      className={`rounded-xl border px-2.5 py-2 ${
+        total > 0 ? 'border-cobre/60 bg-cobre/[0.07]' : 'border-linea bg-panel'
       }`}
     >
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-[14.5px] font-semibold">{producto.nombreCorto}</p>
-        <div className="flex items-center gap-2">
-          <Precio base={precio} tamano="chico" />
-          <span className={`text-[11.5px] ${stock <= 0 ? 'text-alerta' : 'text-apagado'}`}>
-            {stock <= 0 ? 'sin existencia' : `${stock} en stock`}
-          </span>
+      <div className="flex items-center gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[14.5px] font-semibold">{producto.nombreCorto}</p>
+          <div className="flex items-center gap-2">
+            <Precio base={precioDe(base)} tamano="chico" />
+            <span className={`text-[11.5px] ${stock <= 0 ? 'text-alerta' : 'text-apagado'}`}>
+              {stock <= 0 ? 'sin existencia' : `${stock} en stock`}
+            </span>
+          </div>
         </div>
+
+        <Contador
+          valor={cantidadBase}
+          etiqueta={producto.nombreCorto}
+          onCambio={(n) => onCantidad(base, n)}
+        />
       </div>
 
-      <div className="flex shrink-0 items-center gap-1">
-        <button
-          onClick={() => onCantidad(Math.max(0, cantidad - 1))}
-          disabled={cantidad === 0}
-          className="h-11 w-11 rounded-lg border border-linea text-[20px] text-tinta2 disabled:opacity-25"
-          aria-label={`Quitar uno de ${producto.nombreCorto}`}
-        >
-          −
-        </button>
-        <input
-          value={cantidad === 0 ? '' : String(cantidad)}
-          onChange={(e) => onCantidad(Math.max(0, Math.floor(parsearMonto(e.target.value))))}
-          inputMode="numeric"
-          placeholder="0"
-          className="tabular h-11 w-14 rounded-lg border border-linea bg-panel2 text-center font-bold"
-          aria-label={`Cantidad vendida de ${producto.nombreCorto}`}
-        />
-        <button
-          onClick={() => onCantidad(cantidad + 1)}
-          className="h-11 w-11 rounded-lg border border-linea text-[20px] text-tinta2"
-          aria-label={`Agregar uno de ${producto.nombreCorto}`}
-        >
-          +
-        </button>
-      </div>
+      {bultos.length > 0 &&
+        (abierto ? (
+          <div className="mt-2 flex flex-col gap-1.5 border-t border-linea pt-2">
+            {bultos.map((b) => (
+              <div key={b.id} className="flex items-center gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[13px] font-medium text-tinta2">
+                    {b.nombre}
+                    <span className="pl-1.5 font-mono text-[10.5px] text-apagado">
+                      &times;{b.factor}
+                    </span>
+                  </p>
+                  <Precio base={precioDe(b)} tamano="chico" />
+                </div>
+                <Contador
+                  valor={cantidadDe(b.id)}
+                  etiqueta={`${b.nombre} de ${producto.nombreCorto}`}
+                  onCambio={(n) => onCantidad(b, n)}
+                />
+              </div>
+            ))}
+            {enBultos > 0 && (
+              <p className="tabular pt-0.5 text-right font-mono text-[10.5px] text-apagado">
+                {enBultos} unidades en bultos &middot; {total} en total
+              </p>
+            )}
+          </div>
+        ) : (
+          <button
+            onClick={() => setAbierto(true)}
+            className="mt-1.5 text-[12px] font-semibold text-cobre2"
+            style={{ minHeight: 0 }}
+          >
+            + vendi {bultos.map((b) => b.nombre.toLowerCase()).join(' o ')}
+          </button>
+        ))}
+    </div>
+  )
+}
+
+/** Menos, casilla y mas. El mismo control para unidades y para bultos. */
+function Contador({
+  valor,
+  etiqueta,
+  onCambio,
+}: {
+  valor: number
+  etiqueta: string
+  onCambio: (n: number) => void
+}) {
+  return (
+    <div className="flex shrink-0 items-center gap-1">
+      <button
+        onClick={() => onCambio(Math.max(0, valor - 1))}
+        disabled={valor === 0}
+        className="h-11 w-11 rounded-lg border border-linea text-[20px] text-tinta2 disabled:opacity-25"
+        aria-label={`Quitar uno de ${etiqueta}`}
+      >
+        &minus;
+      </button>
+      <input
+        value={valor === 0 ? '' : String(valor)}
+        onChange={(e) => onCambio(Math.max(0, Math.floor(parsearMonto(e.target.value))))}
+        inputMode="numeric"
+        placeholder="0"
+        className="tabular h-11 w-14 rounded-lg border border-linea bg-panel2 text-center font-bold"
+        aria-label={`Cantidad vendida de ${etiqueta}`}
+      />
+      <button
+        onClick={() => onCambio(valor + 1)}
+        className="h-11 w-11 rounded-lg border border-linea text-[20px] text-tinta2"
+        aria-label={`Agregar uno de ${etiqueta}`}
+      >
+        +
+      </button>
     </div>
   )
 }
