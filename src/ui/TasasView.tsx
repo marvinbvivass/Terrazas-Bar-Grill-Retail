@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { MONEDAS, formatoNumero, parsearMonto } from '../domain/money'
-import { hoy, sumarDias, textoCorto } from '../domain/dias'
+import { hoy, textoCorto, textoLargo } from '../domain/dias'
+import { Calendario } from './Calendario'
 import { historialDeTasas, tasaExactaDe, tasasVigentes, variacion } from '../domain/tasas'
 import type { MonedaCodigo } from '../domain/types'
 import type { Pos } from '../hooks/usePos'
@@ -26,6 +27,9 @@ export function TasasView({ pos }: { pos: Pos }) {
 
   const historial = useMemo(() => historialDeTasas(pos.tasasDia), [pos.tasasDia])
   const rigen = useMemo(() => tasasVigentes(fecha, pos.tasasDia), [fecha, pos.tasasDia])
+
+  /** Los días que tienen tasa propia, para marcarlos en el calendario */
+  const conTasa = useMemo(() => new Set(pos.tasasDia.map((t) => t.dia)), [pos.tasasDia])
 
   const esHoy = fecha === hoy()
   const futuro = fecha > hoy()
@@ -66,42 +70,14 @@ export function TasasView({ pos }: { pos: Pos }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* Calendario */}
-      <div className="flex shrink-0 items-center gap-1 border-b border-linea bg-panel px-2 py-2">
-        <button
-          onClick={() => cambiarFecha(sumarDias(fecha, -1))}
-          className="h-10 w-10 rounded-lg text-[20px] text-tinta2"
-          aria-label="Día anterior"
-        >
-          ‹
-        </button>
-
-        <label className="relative min-w-0 flex-1 text-center">
-          <span className="block truncate text-[15px] font-bold">{textoCorto(fecha)}</span>
-          <span className="block font-mono text-[10px] text-apagado">
-            {esHoy ? 'hoy' : 'toca para elegir otra fecha'}
-          </span>
-          <input
-            type="date"
-            value={fecha}
-            onChange={(e) => e.target.value && cambiarFecha(e.target.value)}
-            className="absolute inset-0 h-full w-full opacity-0"
-            aria-label="Elegir fecha"
-          />
-        </label>
-
-        <button
-          onClick={() => cambiarFecha(sumarDias(fecha, 1))}
-          className="h-10 w-10 rounded-lg text-[20px] text-tinta2"
-          aria-label="Día siguiente"
-        >
-          ›
-        </button>
-
+      <div className="flex shrink-0 items-baseline justify-between gap-2 border-b border-linea bg-panel px-3 py-2">
+        <span className="truncate text-[15px] font-bold first-letter:uppercase">
+          {textoLargo(fecha)}
+        </span>
         {!esHoy && (
           <button
             onClick={() => cambiarFecha(hoy())}
-            className="rounded-lg border border-cobre px-2.5 py-1 font-mono text-[10px] tracking-wider text-cobre2 uppercase"
+            className="shrink-0 rounded-lg border border-cobre px-2.5 py-1 font-mono text-[10px] tracking-wider text-cobre2 uppercase"
             style={{ minHeight: 0 }}
           >
             Hoy
@@ -110,6 +86,12 @@ export function TasasView({ pos }: { pos: Pos }) {
       </div>
 
       <div className="scroll-y min-h-0 flex-1 px-3 py-3">
+        <Calendario valor={fecha} onElegir={cambiarFecha} marcados={conTasa} />
+
+        <p className="px-1 pt-1.5 pb-3 text-center text-[11.5px] text-apagado">
+          El punto marca los días que ya tienen tasa cargada.
+        </p>
+
         {futuro && (
           <p className="mb-3 rounded-xl border border-ambar/50 bg-ambar/10 px-3 py-2.5 text-[12.5px] leading-relaxed text-ambar">
             Estás en una fecha futura. Puedes dejar la tasa cargada por adelantado, pero hasta que

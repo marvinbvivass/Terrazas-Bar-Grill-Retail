@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { hoy, sumarDias } from '../domain/dias'
 import { salir } from '../data/firebase'
 import { ChipMoneda } from './moneda'
+import { Calendario } from './Calendario'
 import type { Pos } from '../hooks/usePos'
 import type { Rol } from '../domain/types'
 
@@ -27,6 +28,7 @@ export function BarraSuperior({
   onAtras: (() => void) | null
 }) {
   const [menu, setMenu] = useState(false)
+  const [calendario, setCalendario] = useState(false)
   const esHoy = pos.dia === hoy()
 
   const fecha = new Date(`${pos.dia}T12:00:00`)
@@ -95,25 +97,23 @@ export function BarraSuperior({
             ‹
           </button>
 
-          <label className="relative min-w-0 flex-1 text-center">
+          {/* Abre el calendario propio, no el del sistema: el nativo trae sus
+              colores, su idioma y tapa la pantalla entera. */}
+          <button
+            onClick={() => setCalendario((v) => !v)}
+            className="flex min-w-0 flex-1 items-center justify-center gap-1.5 text-center"
+            aria-expanded={calendario}
+            aria-label="Elegir día de trabajo"
+          >
             <span
-              className={`block truncate text-[13.5px] font-semibold ${
+              className={`min-w-0 truncate text-[13.5px] font-semibold ${
                 esHoy ? 'text-tinta2' : 'text-cobre2'
               }`}
             >
               {etiqueta}
             </span>
-            {/* El input nativo va encima e invisible: abre el calendario de
-                Android al tocar, sin heredar su aspecto de escritorio. */}
-            <input
-              type="date"
-              value={pos.dia}
-              max={hoy()}
-              onChange={(e) => e.target.value && pos.setDia(e.target.value)}
-              className="absolute inset-0 h-full w-full opacity-0"
-              aria-label="Elegir día de trabajo"
-            />
-          </label>
+            <span className={`text-[10px] text-apagado ${calendario ? 'rotate-180' : ''}`}>▼</span>
+          </button>
 
           <button
             onClick={() => pos.setDia(sumarDias(pos.dia, 1))}
@@ -134,6 +134,19 @@ export function BarraSuperior({
             </button>
           )}
         </div>
+
+        {calendario && (
+          <div className="border-t border-linea/60 px-2 pt-2 pb-2">
+            <Calendario
+              valor={pos.dia}
+              maximo={hoy()}
+              onElegir={(d) => {
+                pos.setDia(d)
+                setCalendario(false)
+              }}
+            />
+          </div>
+        )}
 
         {/* Una franja solo cuando hay algo que decir. Ocupar alto permanente
             con "Al día" en la pantalla de un teléfono es desperdiciarlo. */}
