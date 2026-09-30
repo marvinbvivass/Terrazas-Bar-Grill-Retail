@@ -450,10 +450,10 @@ function PasoCredito({
       {conEnvase.length > 0 && pos.clientes.length > 0 && (
         <div className="mt-4 border-t border-linea pt-3">
           <p className="pb-0.5 font-mono text-[10px] tracking-[0.14em] text-apagado uppercase">
-            Vacíos
+            Vacíos (en cajas)
           </p>
           <p className="pb-2.5 text-[12.5px] leading-relaxed text-tinta2">
-            ¿Alguien se llevó botellas para su casa? Apunta los envases aquí. Esto no entra en el
+            ¿Alguien se llevó cajas para su casa? Apúntalas aquí, en cajas. Esto no entra en el
             cuadre: un vacío no es plata, es un envase que tiene que volver.
           </p>
 
@@ -517,7 +517,7 @@ function PasoCredito({
                     inputMode="numeric"
                     placeholder="se llevó"
                     className="tabular w-[84px] rounded-lg border border-linea bg-panel2 py-2.5 text-center font-bold placeholder:text-[11px] placeholder:font-normal"
-                    aria-label="Envases que se llevó"
+                    aria-label="Cajas que se llevó"
                   />
                   <input
                     value={e.trajo}
@@ -529,7 +529,7 @@ function PasoCredito({
                     inputMode="numeric"
                     placeholder="trajo"
                     className="tabular w-[84px] rounded-lg border border-linea bg-panel2 py-2.5 text-center font-bold placeholder:text-[11px] placeholder:font-normal"
-                    aria-label="Envases que trajo"
+                    aria-label="Cajas que trajo"
                   />
                 </div>
               </div>
@@ -550,7 +550,7 @@ function PasoCredito({
               }
               className="rounded-xl border border-dashed border-linea2 py-2.5 text-[14px] font-semibold text-tinta2"
             >
-              + Anotar vacíos de un cliente
+              + Anotar cajas de un cliente
             </button>
           </div>
         </div>

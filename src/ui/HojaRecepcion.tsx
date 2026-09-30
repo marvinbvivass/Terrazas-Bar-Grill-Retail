@@ -266,20 +266,20 @@ export function HojaRecepcion({ pos, onCerrar }: { pos: Pos; onCerrar: () => voi
       {conEnvase.length > 0 && (
         <div className="mt-4 rounded-xl border border-linea bg-panel2 px-3 py-3">
           <p className="pb-0.5 font-mono text-[10px] tracking-[0.14em] text-apagado uppercase">
-            Vacios de este despacho
+            Vacíos de este despacho (en cajas)
           </p>
           <p className="pb-2.5 text-[12.5px] leading-relaxed text-tinta2">
-            <b>Dejo</b> son los envases que vinieron llenos y vas a tener que devolver.
-            <b> Se llevo</b> son los vacios que el camion saco del patio.
+            <b>Dejó</b> son las cajas que vinieron llenas y vas a tener que devolver.
+            <b> Se llevó</b> son las cajas de vacíos que el camión sacó del patio.
           </p>
 
           <div className="flex gap-2 px-1 pb-1">
             <span className="flex-1" />
             <span className="w-[72px] text-center font-mono text-[9.5px] tracking-[0.1em] text-apagado uppercase">
-              Dejo
+              Dejó
             </span>
             <span className="w-[72px] text-center font-mono text-[9.5px] tracking-[0.1em] text-apagado uppercase">
-              Se llevo
+              Se llevó
             </span>
           </div>
 
@@ -300,7 +300,7 @@ export function HojaRecepcion({ pos, onCerrar }: { pos: Pos; onCerrar: () => voi
                   inputMode="numeric"
                   placeholder="0"
                   className="tabular h-10 w-[72px] rounded-lg border border-linea bg-panel text-center font-bold"
-                  aria-label={`Envases que dejo de ${p.nombreCorto}`}
+                  aria-label={`Cajas que dejó de ${p.nombreCorto}`}
                 />
                 <input
                   value={envases[p.id]?.devueltos ?? ''}
@@ -313,7 +313,7 @@ export function HojaRecepcion({ pos, onCerrar }: { pos: Pos; onCerrar: () => voi
                   inputMode="numeric"
                   placeholder="0"
                   className="tabular h-10 w-[72px] rounded-lg border border-linea bg-panel text-center font-bold"
-                  aria-label={`Envases que se llevo de ${p.nombreCorto}`}
+                  aria-label={`Cajas que se llevó de ${p.nombreCorto}`}
                 />
               </div>
             ))}

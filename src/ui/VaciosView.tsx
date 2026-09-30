@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { productosConEnvase, saldoCliente, totalDe } from '../domain/vacios'
+import { presentacionDeRetorno, productosConEnvase, saldoCliente, totalDe } from '../domain/vacios'
 import { parsearMonto } from '../domain/money'
 import type { UUID } from '../domain/types'
 import type { Pos } from '../hooks/usePos'
@@ -8,8 +8,11 @@ import { Hoja } from './Hoja'
 /**
  * Vacíos: los envases retornables que circulan.
  *
+ * TODO SE CUENTA EN CAJAS, que es como los mueve el distribuidor: el camión no
+ * recibe cuatrocientas ochenta botellas sueltas, recibe trece gaveras.
+ *
  * Dos deudas que van en direcciones contrarias y nunca se suman entre sí. El
- * local le debe envases a la compañía; los clientes le deben envases al local.
+ * local le debe cajas a la compañía; los clientes le deben cajas al local.
  * Verlas juntas en un solo número sería como restar lo que debes de lo que te
  * deben y creer que estás en paz.
  */
@@ -29,12 +32,12 @@ export function VaciosView({ pos }: { pos: Pos }) {
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="grid shrink-0 grid-cols-2 gap-px border-b border-linea bg-linea">
         <Cabecera
-          etiqueta="Le debemos a la compañía"
+          etiqueta="Cajas que le debemos al camión"
           valor={debemos}
           tono={debemos > 0 ? 'alerta' : 'verde'}
         />
         <Cabecera
-          etiqueta="Nos deben los clientes"
+          etiqueta="Cajas que deben los clientes"
           valor={nosDeben}
           tono={nosDeben > 0 ? 'ambar' : 'verde'}
         />
@@ -51,7 +54,7 @@ export function VaciosView({ pos }: { pos: Pos }) {
         {pos.vaciosCompania.size > 0 && (
           <section className="mb-3 overflow-hidden rounded-xl border border-linea bg-panel">
             <h2 className="border-b border-linea px-3.5 py-2 font-mono text-[10px] tracking-[0.16em] text-apagado uppercase">
-              Pendiente con la compañía
+              Cajas pendientes con la compañía
             </h2>
             <div className="px-3.5 py-1">
               {[...pos.vaciosCompania].map(([productoId, cantidad]) => (
@@ -62,7 +65,9 @@ export function VaciosView({ pos }: { pos: Pos }) {
                       cantidad > 0 ? 'text-alerta' : 'text-verde'
                     }`}
                   >
-                    {cantidad > 0 ? cantidad : `${-cantidad} a favor`}
+                    {cantidad > 0
+                      ? `${cantidad} ${cantidad === 1 ? 'caja' : 'cajas'}`
+                      : `${-cantidad} a favor`}
                   </span>
                 </div>
               ))}
@@ -72,11 +77,11 @@ export function VaciosView({ pos }: { pos: Pos }) {
 
         <section className="overflow-hidden rounded-xl border border-linea bg-panel">
           <h2 className="border-b border-linea px-3.5 py-2 font-mono text-[10px] tracking-[0.16em] text-apagado uppercase">
-            Clientes con envases pendientes
+            Clientes con cajas pendientes
           </h2>
           {pos.vaciosDeudores.length === 0 ? (
             <p className="px-3.5 py-5 text-center text-[13px] text-apagado">
-              Ningún cliente debe envases.
+              Ningún cliente debe cajas.
             </p>
           ) : (
             <ul>
@@ -105,8 +110,9 @@ export function VaciosView({ pos }: { pos: Pos }) {
         </section>
 
         <p className="px-1 pt-4 text-center text-[12px] leading-relaxed text-apagado">
-          Las dos deudas van en direcciones contrarias y no se restan entre sí: que un cliente te
-          deba treinta envases no paga los que le debes al camión.
+          Todo va en cajas, como lo cuenta el camión. Las dos deudas van en direcciones
+          contrarias y no se restan entre sí: que un cliente te deba tres cajas no paga las que le
+          debes al distribuidor.
         </p>
       </div>
 
@@ -189,23 +195,27 @@ function HojaCompania({ pos, onCerrar }: { pos: Pos; onCerrar: () => void }) {
       }
     >
       <p className="pb-3 text-[13.5px] leading-relaxed text-tinta2">
-        <b>Dejó</b> son los envases que vinieron llenos en este despacho y vas a tener que
-        devolver. <b>Se llevó</b> son los vacíos que el camión se llevó del patio.
+        Todo en <b>cajas</b>. <b>Dejó</b> son las cajas que vinieron llenas en este despacho y
+        vas a tener que devolver. <b>Se llevó</b> son las cajas de vacíos que el camión sacó del
+        patio.
       </p>
 
       <div className="flex flex-col gap-2">
         <div className="flex gap-2 px-1 pb-0.5">
           <span className="flex-1" />
           <span className="w-20 text-center font-mono text-[9.5px] tracking-[0.12em] text-apagado uppercase">
-            Dejó
+            Dejó (cajas)
           </span>
           <span className="w-20 text-center font-mono text-[9.5px] tracking-[0.12em] text-apagado uppercase">
-            Se llevó
+            Se llevó (cajas)
           </span>
         </div>
         {conEnvase.map((p) => (
           <div key={p.id} className="flex items-center gap-2">
-            <span className="min-w-0 flex-1 truncate text-[14px] font-medium">{p.nombreCorto}</span>
+            <span className="min-w-0 flex-1 truncate text-[14px] font-medium">
+              {p.nombreCorto}
+              <CajaDe pos={pos} productoId={p.id} />
+            </span>
             <input
               value={campos[p.id]?.dejados ?? ''}
               onChange={(e) =>
@@ -217,7 +227,7 @@ function HojaCompania({ pos, onCerrar }: { pos: Pos; onCerrar: () => void }) {
               inputMode="numeric"
               placeholder="0"
               className="tabular h-11 w-20 rounded-lg border border-linea bg-panel2 text-center font-bold"
-              aria-label={`Envases que dejó de ${p.nombreCorto}`}
+              aria-label={`Cajas que dejó de ${p.nombreCorto}`}
             />
             <input
               value={campos[p.id]?.devueltos ?? ''}
@@ -230,7 +240,7 @@ function HojaCompania({ pos, onCerrar }: { pos: Pos; onCerrar: () => void }) {
               inputMode="numeric"
               placeholder="0"
               className="tabular h-11 w-20 rounded-lg border border-linea bg-panel2 text-center font-bold"
-              aria-label={`Envases que se llevó de ${p.nombreCorto}`}
+              aria-label={`Cajas que se llevó de ${p.nombreCorto}`}
             />
           </div>
         ))}
@@ -305,9 +315,14 @@ function HojaClienteVacios({ pos, onCerrar }: { pos: Pos; onCerrar: () => void }
       {clienteId && (
         <p className="pt-2 text-[12.5px] text-apagado">
           {deuda.size === 0
-            ? 'No debe envases.'
+            ? 'No debe cajas.'
             : `Debe ${[...deuda]
-                .map(([pid, n]) => `${n} de ${pos.snapshot?.productos.find((p) => p.id === pid)?.nombreCorto ?? ''}`)
+                .map(
+                  ([pid, n]) =>
+                    `${n} ${n === 1 ? 'caja' : 'cajas'} de ${
+                      pos.snapshot?.productos.find((p) => p.id === pid)?.nombreCorto ?? ''
+                    }`,
+                )
                 .join(', ')}.`}
         </p>
       )}
@@ -316,15 +331,18 @@ function HojaClienteVacios({ pos, onCerrar }: { pos: Pos; onCerrar: () => void }
         <div className="flex gap-2 px-1 pb-0.5">
           <span className="flex-1" />
           <span className="w-20 text-center font-mono text-[9.5px] tracking-[0.12em] text-apagado uppercase">
-            Se llevó
+            Se llevó (cajas)
           </span>
           <span className="w-20 text-center font-mono text-[9.5px] tracking-[0.12em] text-apagado uppercase">
-            Trajo
+            Trajo (cajas)
           </span>
         </div>
         {conEnvase.map((p) => (
           <div key={p.id} className="flex items-center gap-2">
-            <span className="min-w-0 flex-1 truncate text-[14px] font-medium">{p.nombreCorto}</span>
+            <span className="min-w-0 flex-1 truncate text-[14px] font-medium">
+              {p.nombreCorto}
+              <CajaDe pos={pos} productoId={p.id} />
+            </span>
             <input
               value={campos[p.id]?.seLlevo ?? ''}
               onChange={(e) =>
@@ -336,7 +354,7 @@ function HojaClienteVacios({ pos, onCerrar }: { pos: Pos; onCerrar: () => void }
               inputMode="numeric"
               placeholder="0"
               className="tabular h-11 w-20 rounded-lg border border-linea bg-panel2 text-center font-bold"
-              aria-label={`Envases que se llevó de ${p.nombreCorto}`}
+              aria-label={`Cajas que se llevó de ${p.nombreCorto}`}
             />
             <input
               value={campos[p.id]?.trajo ?? ''}
@@ -349,16 +367,27 @@ function HojaClienteVacios({ pos, onCerrar }: { pos: Pos; onCerrar: () => void }
               inputMode="numeric"
               placeholder="0"
               className="tabular h-11 w-20 rounded-lg border border-linea bg-panel2 text-center font-bold"
-              aria-label={`Envases que trajo de ${p.nombreCorto}`}
+              aria-label={`Cajas que trajo de ${p.nombreCorto}`}
             />
           </div>
         ))}
       </div>
 
       <p className="px-1 pt-3 text-center text-[12px] leading-relaxed text-apagado">
-        El que llega con seis vacíos y se lleva seis llenas no queda debiendo nada: escribe seis y
-        seis, y no se guarda movimiento.
+        Todo en cajas. El que llega con dos cajas de vacíos y se lleva dos llenas no queda
+        debiendo nada: escribe dos y dos, y no se guarda movimiento.
       </p>
     </Hoja>
+  )
+}
+
+/** De cuántas unidades es la caja de ese producto, como referencia */
+function CajaDe({ pos, productoId }: { pos: Pos; productoId: UUID }) {
+  const pres = presentacionDeRetorno(pos.snapshot?.presentacionesPorProducto.get(productoId) ?? [])
+  if (!pres) return null
+  return (
+    <span className="pl-1.5 font-mono text-[10px] text-apagado">
+      {pres.nombre} &times;{pres.factor}
+    </span>
   )
 }
