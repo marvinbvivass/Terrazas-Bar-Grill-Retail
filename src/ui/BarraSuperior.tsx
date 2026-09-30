@@ -1,8 +1,7 @@
 import { useState } from 'react'
-import { hoy, sumarDias } from '../domain/dias'
+import { hoy } from '../domain/dias'
 import { salir } from '../data/firebase'
 import { ChipMoneda } from './moneda'
-import { Calendario } from './Calendario'
 import type { Pos } from '../hooks/usePos'
 import type { Rol } from '../domain/types'
 
@@ -28,7 +27,6 @@ export function BarraSuperior({
   onAtras: (() => void) | null
 }) {
   const [menu, setMenu] = useState(false)
-  const [calendario, setCalendario] = useState(false)
   const esHoy = pos.dia === hoy()
 
   const fecha = new Date(`${pos.dia}T12:00:00`)
@@ -87,69 +85,25 @@ export function BarraSuperior({
           </button>
         </div>
 
-        {/* Día de trabajo */}
-        <div className="flex items-center gap-1 border-t border-linea/60 px-2 py-1">
-          <button
-            onClick={() => pos.setDia(sumarDias(pos.dia, -1))}
-            className="h-9 w-9 rounded-lg text-[19px] text-tinta2"
-            aria-label="Día anterior"
-          >
-            ‹
-          </button>
-
-          {/* Abre el calendario propio, no el del sistema: el nativo trae sus
-              colores, su idioma y tapa la pantalla entera. */}
-          <button
-            onClick={() => setCalendario((v) => !v)}
-            className="flex min-w-0 flex-1 items-center justify-center gap-1.5 text-center"
-            aria-expanded={calendario}
-            aria-label="Elegir día de trabajo"
-          >
-            <span
-              className={`min-w-0 truncate text-[13.5px] font-semibold ${
-                esHoy ? 'text-tinta2' : 'text-cobre2'
-              }`}
-            >
-              {etiqueta}
-            </span>
-            <span className={`text-[10px] text-apagado ${calendario ? 'rotate-180' : ''}`}>▼</span>
-          </button>
-
-          <button
-            onClick={() => pos.setDia(sumarDias(pos.dia, 1))}
-            disabled={esHoy}
-            className="h-9 w-9 rounded-lg text-[19px] text-tinta2 disabled:opacity-25"
-            aria-label="Día siguiente"
-          >
-            ›
-          </button>
-
-          {!esHoy && (
-            <button
-              onClick={() => pos.setDia(hoy())}
-              className="rounded-lg border border-cobre px-2.5 py-1 font-mono text-[10px] tracking-wider text-cobre2 uppercase"
-              style={{ minHeight: 0 }}
-            >
-              Hoy
-            </button>
-          )}
-        </div>
-
-        {calendario && (
-          <div className="border-t border-linea/60 px-2 pt-2 pb-2">
-            <Calendario
-              valor={pos.dia}
-              maximo={hoy()}
-              onElegir={(d) => {
-                pos.setDia(d)
-                setCalendario(false)
-              }}
-            />
-          </div>
-        )}
-
         {/* Una franja solo cuando hay algo que decir. Ocupar alto permanente
             con "Al día" en la pantalla de un teléfono es desperdiciarlo. */}
+        {/*
+          La aplicación trabaja SIEMPRE en el día de hoy. El selector de fecha
+          que había aquí se retiró: tenerlo permanente invitaba a dejarlo movido
+          sin querer, y entonces la venta siguiente se cargaba en la fecha
+          equivocada. Para mirar atrás está Historial, que no cambia el día de
+          trabajo. Esta franja solo aparece en el caso excepcional de estar
+          cargando un día atrasado a propósito.
+        */}
+        {!esHoy && (
+          <button
+            onClick={() => pos.volverAHoy()}
+            className="w-full border-t border-ambar/40 bg-ambar/15 px-3 py-1.5 text-center text-[12.5px] font-semibold text-ambar"
+          >
+            Cargando el {etiqueta} · toca para volver a hoy
+          </button>
+        )}
+
         {(!pos.enLinea || pos.errorSync || pos.pendientes > 0) && (
           <div
             className={`px-3 pb-1 text-center font-mono text-[10.5px] tracking-wider uppercase ${

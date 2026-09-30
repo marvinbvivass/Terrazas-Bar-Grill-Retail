@@ -112,7 +112,7 @@ function Aplicacion({ rol }: { rol: Rol }) {
           {vista === 'catalogo' && <CatalogoView pos={pos} />}
           {vista === 'historial' &&
             (puedeVerHistorial ? (
-              <HistorialView pos={pos} onVerDia={() => setVista('cierre')} />
+              <HistorialView pos={pos} onCargarDia={() => setVista('cierre')} />
             ) : (
               <p className="px-6 py-14 text-center text-[14px] text-apagado">
                 El historial es solo para administradores.

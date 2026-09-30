@@ -62,6 +62,7 @@ import {
   guardarProducto as guardarProductoDb,
   cargarSnapshot,
   cierreDelDia,
+  cargarCierres,
   cargarDevoluciones,
   cargarTasasDia,
   cargarVacios,
@@ -115,6 +116,8 @@ async function prepararTransporte(): Promise<void> {
 export function usePos() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
   const [dia, setDia] = useState<DiaNegocio>(hoy())
+  /** Todas las actas guardadas, para que Historial pueda mirar cualquier día */
+  const [cierres, setCierres] = useState<CierreDia[]>([])
   /** El acta del día que se está mirando, si ya se cerró */
   const [cierreDia, setCierreDia] = useState<CierreDia | null>(null)
   /** Todas las tasas cargadas, de todos los días */
@@ -136,6 +139,14 @@ export function usePos() {
    * protege lo que se ve, y lo que hay que proteger es el dato.
    */
   const diaCerrado = cierreDia !== null
+
+  /**
+   * Volver al día de hoy.
+   *
+   * La aplicación trabaja siempre en hoy; solo se sale de ahí para cargar un
+   * día atrasado a propósito, y de ese estado hay que poder salir de un toque.
+   */
+  const volverAHoy = useCallback(() => setDia(hoy()), [])
 
   const bloqueadoPorCierre = useCallback(() => {
     if (!cierreDia) return false
@@ -164,12 +175,13 @@ export function usePos() {
     void (async () => {
       await pedirAlmacenamientoPersistente()
       await prepararConfiguracion()
-      const [s, comercial, envases, devs, cambios, cola] = await Promise.all([
+      const [s, comercial, envases, devs, cambios, actas, cola] = await Promise.all([
         cargarSnapshot(),
         cargarMovimientoComercial(),
         cargarVacios(),
         cargarDevoluciones(),
         cargarTasasDia(),
+        cargarCierres(),
         pendientesDeSubir(),
       ])
       if (!vivo) return
@@ -180,6 +192,7 @@ export function usePos() {
       setVacios(envases)
       setDevoluciones(devs)
       setTasasDia(cambios)
+      setCierres(actas)
       setPendientes(cola)
     })()
     return () => {
@@ -225,12 +238,13 @@ export function usePos() {
       const empuje = await empujarCola()
       await bajarSnapshot()
 
-      const [s2, comercial, envases, devs, cambios, cola] = await Promise.all([
+      const [s2, comercial, envases, devs, cambios, actas, cola] = await Promise.all([
         cargarSnapshot(),
         cargarMovimientoComercial(),
         cargarVacios(),
         cargarDevoluciones(),
         cargarTasasDia(),
+        cargarCierres(),
         pendientesDeSubir(),
       ])
       setSnapshot(s2)
@@ -240,6 +254,7 @@ export function usePos() {
       setVacios(envases)
       setDevoluciones(devs)
       setTasasDia(cambios)
+      setCierres(actas)
       setPendientes(cola)
       setUltimaSync(Date.now())
 
@@ -565,6 +580,7 @@ export function usePos() {
       })
       await guardarCierreDia(acta)
       setCierreDia(acta)
+      setCierres(await cargarCierres())
 
       setPendientes(await pendientesDeSubir())
       setAviso({
@@ -797,6 +813,7 @@ export function usePos() {
     setAbonos(comercial.abonos)
     setSnapshot(await cargarSnapshot())
     setCierreDia(null)
+    setCierres(await cargarCierres())
     setPendientes(await pendientesDeSubir())
     setAviso({ texto: 'Día reabierto: puedes corregir y volver a cerrar', tono: 'ok' })
     void sincronizar(true)
@@ -1045,7 +1062,9 @@ export function usePos() {
     vaciosDe,
     reabrirDia,
     cierreDia,
+    cierres,
     diaCerrado,
+    volverAHoy,
     crearCliente,
     actualizarCliente,
     eliminarCliente,
