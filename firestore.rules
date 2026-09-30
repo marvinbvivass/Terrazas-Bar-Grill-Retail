@@ -140,6 +140,16 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Tasas por día. Se pueden corregir —el cambio se teclea a mano y a veces
+    // se equivoca— pero no borrar: sin la tasa de un día no se puede releer
+    // ningún cierre de ese día.
+    match /tasasDia/{id} {
+      allow read:   if sesion();
+      allow create: if sesion();
+      allow update: if sesion();
+      allow delete: if false;
+    }
+
     match /movimientos/{id} {
       allow read:   if sesion();
       allow create: if sesion();

@@ -4,6 +4,7 @@ import type { Recepcion } from '../domain/recepcion'
 import type { AjusteInventario } from '../domain/ajuste'
 import type { MovimientoVacios } from '../domain/vacios'
 import type { Devolucion } from '../domain/devolucion'
+import type { TasaDia } from '../domain/tasas'
 import type { Abono, Venta } from '../domain/types'
 
 /**
@@ -44,6 +45,8 @@ export interface Transporte {
   subirVacios(movimientos: MovimientoVacios[]): Promise<void>
   /** Sube las devoluciones de cliente. Idempotente por `devolucion.id`. */
   subirDevoluciones(devoluciones: Devolucion[]): Promise<void>
+  /** Sube las tasas por día. Idempotente por `tasa.id`, que es día + moneda. */
+  subirTasas(tasas: TasaDia[]): Promise<void>
   /** Baja el catálogo completo. Con pocos productos son unos kilobytes. */
   bajarSnapshot(): Promise<void>
 }
@@ -83,6 +86,9 @@ export const transporteLocal: Transporte = {
   async subirDevoluciones() {
     /* sin backend todavía */
   },
+  async subirTasas() {
+    /* sin backend todavía */
+  },
   async bajarSnapshot() {
     /* sin backend todavía */
   },
@@ -113,6 +119,7 @@ export async function empujarCola(limite = 50): Promise<ResultadoEmpuje> {
   const ajustes = pendientes.filter((p) => p.tipo === 'ajuste')
   const vacios = pendientes.filter((p) => p.tipo === 'vacios')
   const devoluciones = pendientes.filter((p) => p.tipo === 'devolucion')
+  const tasas = pendientes.filter((p) => p.tipo === 'tasaDia')
 
   let aceptadas = 0
   let rechazadas = 0
@@ -200,6 +207,21 @@ export async function empujarCola(limite = 50): Promise<ResultadoEmpuje> {
         }
       })
       aceptadas += devoluciones.length
+    }
+
+    // Las tasas van de las primeras: todo lo que se sube después lleva montos
+    // convertidos con ellas, y un informe del servidor que no las conozca no
+    // puede reconstruir ni un cierre.
+    if (tasas.length) {
+      await transporte.subirTasas(tasas.map((p) => p.tasa))
+      await db.transaction('rw', [db.tasasDia, db.outbox], async () => {
+        for (const p of tasas) {
+          const guardada = await db.tasasDia.get(p.id)
+          if (guardada) await db.tasasDia.put({ ...guardada, sincronizadaEn: Date.now() })
+          await db.outbox.delete(p.id)
+        }
+      })
+      aceptadas += tasas.length
     }
 
     const respuestas = [

@@ -53,6 +53,7 @@ import {
 import { construirAbono, resumirClientes, saldoDeCliente, ventasAbiertas, type PlanAbono } from '../domain/credito'
 import { hoy, inicioDe } from '../domain/dias'
 import { formato } from '../domain/money'
+import { tasasVigentes, type TasaDia } from '../domain/tasas'
 import type { Abono, Cliente, DiaNegocio, MonedaCodigo, Pago, Presentacion, Producto, UUID, Venta } from '../domain/types'
 import {
   anularVenta,
@@ -62,7 +63,9 @@ import {
   cargarSnapshot,
   cierreDelDia,
   cargarDevoluciones,
+  cargarTasasDia,
   cargarVacios,
+  guardarTasaDia,
   registrarAjuste,
   registrarDevolucion,
   registrarRecepcion,
@@ -71,7 +74,6 @@ import {
   guardarCierreDia,
   reabrirCierre,
   guardarCliente,
-  guardarTasa,
   pedirAlmacenamientoPersistente,
   pendientesDeSubir,
   registrarAbono,
@@ -115,6 +117,8 @@ export function usePos() {
   const [dia, setDia] = useState<DiaNegocio>(hoy())
   /** El acta del día que se está mirando, si ya se cerró */
   const [cierreDia, setCierreDia] = useState<CierreDia | null>(null)
+  /** Todas las tasas cargadas, de todos los días */
+  const [tasasDia, setTasasDia] = useState<TasaDia[]>([])
   /** Devoluciones de cliente, para el cierre y para los saldos */
   const [devoluciones, setDevoluciones] = useState<Devolucion[]>([])
   /** Todos los movimientos de envases retornables */
@@ -160,11 +164,12 @@ export function usePos() {
     void (async () => {
       await pedirAlmacenamientoPersistente()
       await prepararConfiguracion()
-      const [s, comercial, envases, devs, cola] = await Promise.all([
+      const [s, comercial, envases, devs, cambios, cola] = await Promise.all([
         cargarSnapshot(),
         cargarMovimientoComercial(),
         cargarVacios(),
         cargarDevoluciones(),
+        cargarTasasDia(),
         pendientesDeSubir(),
       ])
       if (!vivo) return
@@ -174,6 +179,7 @@ export function usePos() {
       setClientes(comercial.clientes)
       setVacios(envases)
       setDevoluciones(devs)
+      setTasasDia(cambios)
       setPendientes(cola)
     })()
     return () => {
@@ -219,11 +225,12 @@ export function usePos() {
       const empuje = await empujarCola()
       await bajarSnapshot()
 
-      const [s2, comercial, envases, devs, cola] = await Promise.all([
+      const [s2, comercial, envases, devs, cambios, cola] = await Promise.all([
         cargarSnapshot(),
         cargarMovimientoComercial(),
         cargarVacios(),
         cargarDevoluciones(),
+        cargarTasasDia(),
         pendientesDeSubir(),
       ])
       setSnapshot(s2)
@@ -232,6 +239,7 @@ export function usePos() {
       setClientes(comercial.clientes)
       setVacios(envases)
       setDevoluciones(devs)
+      setTasasDia(cambios)
       setPendientes(cola)
       setUltimaSync(Date.now())
 
@@ -352,10 +360,48 @@ export function usePos() {
    * La tasa se guarda por moneda. Antes solo existía la del bolívar cableada
    * aquí dentro, y el peso no se podía cambiar desde la aplicación.
    */
-  const actualizarTasa = useCallback(async (moneda: MonedaCodigo, tasa: number) => {
-    await guardarTasa(moneda, tasa)
-    setSnapshot((s) => (s ? { ...s, tasas: { ...s.tasas, [moneda]: tasa } } : s))
-  }, [])
+  /**
+   * Carga la tasa de una moneda PARA EL DÍA QUE SE ESTÁ MIRANDO.
+   *
+   * No para hoy: si el encargado se mueve al lunes y teclea la tasa, es la del
+   * lunes. Guardarla siempre en hoy haría que cargar un día atrasado lo cobrara
+   * con el cambio de esta mañana.
+   */
+  const actualizarTasa = useCallback(
+    async (moneda: MonedaCodigo, tasa: number, diaDestino?: DiaNegocio) => {
+      const objetivo = diaDestino ?? dia
+      await guardarTasaDia(objetivo, moneda, tasa, snapshot?.usuarioId ?? 'local')
+      const todas = await cargarTasasDia()
+      setTasasDia(todas)
+      setPendientes(await pendientesDeSubir())
+      void sincronizar(true)
+    },
+    [dia, snapshot, sincronizar],
+  )
+
+  /*
+   * Las tasas del snapshot son SIEMPRE las del día que se está mirando.
+   *
+   * Se calculan aquí y se meten dentro del snapshot en vez de exponerlas
+   * aparte: el carrito, el cierre y la barra superior ya leen `snapshot.tasas`,
+   * y tener dos fuentes de tasas en la aplicación es la forma segura de que un
+   * día alguna pantalla convierta con la que no es.
+   */
+  const tasasVigentesDelDia = useMemo(
+    () => (tasasDia.length > 0 ? tasasVigentes(dia, tasasDia) : null),
+    [dia, tasasDia],
+  )
+
+  useEffect(() => {
+    if (!tasasVigentesDelDia) return
+    setSnapshot((s) => {
+      if (!s) return s
+      const iguales =
+        Object.keys(tasasVigentesDelDia).length === Object.keys(s.tasas).length &&
+        Object.entries(tasasVigentesDelDia).every(([k, v]) => s.tasas[k] === v)
+      return iguales ? s : { ...s, tasas: tasasVigentesDelDia }
+    })
+  }, [tasasVigentesDelDia])
 
   // -------------------------------------------------------------------------
   // Registrar la carga del día
@@ -973,6 +1019,7 @@ export function usePos() {
     anadirPago,
     removerPago,
     actualizarTasa,
+    tasasDia,
     registrar,
     anular,
     guardarProducto,

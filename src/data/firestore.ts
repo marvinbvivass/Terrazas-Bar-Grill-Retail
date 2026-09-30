@@ -19,6 +19,7 @@ import type { Recepcion } from '../domain/recepcion'
 import type { AjusteInventario } from '../domain/ajuste'
 import type { MovimientoVacios } from '../domain/vacios'
 import type { Devolucion } from '../domain/devolucion'
+import type { TasaDia } from '../domain/tasas'
 import type { Abono, Venta } from '../domain/types'
 import type { RespuestaSync, Transporte } from './sync'
 
@@ -375,7 +376,20 @@ export async function subirDevoluciones(devoluciones: Devolucion[]): Promise<voi
   await lote.commit()
 }
 
+/** Sube las tasas por día */
+export async function subirTasas(tasas: TasaDia[]): Promise<void> {
+  if (tasas.length === 0) return
+  const lote = writeBatch(fsdb())
+  for (const t of tasas) {
+    lote.set(doc(fsdb(), 'tasasDia', t.id), limpiar({ ...t, sincronizadaEn: Date.now() }))
+  }
+  await lote.commit()
+}
+
 export const transporteFirestore: Transporte = {
+  async subirTasas(tasas) {
+    await subirTasas(tasas)
+  },
   async subirDevoluciones(devoluciones) {
     await subirDevoluciones(devoluciones)
   },

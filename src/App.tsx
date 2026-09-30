@@ -11,7 +11,7 @@ import { InventarioView } from './ui/InventarioView'
 import { VaciosView } from './ui/VaciosView'
 import { HistorialView } from './ui/HistorialView'
 import { CatalogoView } from './ui/CatalogoView'
-import { TasasSheet } from './ui/TasasSheet'
+import { TasasView } from './ui/TasasView'
 import { ProveedorMoneda } from './ui/moneda'
 import type { Rol } from './domain/types'
 
@@ -108,6 +108,7 @@ function Aplicacion({ rol }: { rol: Rol }) {
           {vista === 'cxc' && <ClientesView pos={pos} />}
           {vista === 'inventario' && <InventarioView pos={pos} />}
           {vista === 'vacios' && <VaciosView pos={pos} />}
+          {vista === 'tasas' && <TasasView pos={pos} />}
           {vista === 'catalogo' && <CatalogoView pos={pos} />}
           {vista === 'historial' &&
             (puedeVerHistorial ? (
@@ -118,10 +119,6 @@ function Aplicacion({ rol }: { rol: Rol }) {
               </p>
             ))}
         </main>
-
-        {/* Las tasas son una hoja, no una pantalla: son cuatro números que se
-            teclean y se cierran, no algo en lo que uno se quede. */}
-        {vista === 'tasas' && <TasasSheet pos={pos} onCerrar={alMenu} />}
 
         {pos.aviso && (
           <div

@@ -23,6 +23,8 @@ import type { Recepcion } from '../domain/recepcion'
 import type { AjusteInventario } from '../domain/ajuste'
 import type { MovimientoVacios } from '../domain/vacios'
 import type { Devolucion } from '../domain/devolucion'
+import type { TasaDia } from '../domain/tasas'
+import { idTasaDia, tasasVigentes } from '../domain/tasas'
 import { movimientosDeDevolucion } from '../domain/devolucion'
 import { movimientosDeAjuste } from '../domain/ajuste'
 import { costoPromedioTrasEntrada, entradaPorProducto, movimientosDeRecepcion } from '../domain/recepcion'
@@ -60,6 +62,7 @@ export type Pendiente =
   | { id: UUID; tipo: 'ajuste'; ajuste: AjusteInventario; intentos: number; ultimoError: string | null; creadaEn: number }
   | { id: UUID; tipo: 'vacios'; vacios: MovimientoVacios; intentos: number; ultimoError: string | null; creadaEn: number }
   | { id: UUID; tipo: 'devolucion'; devolucion: Devolucion; intentos: number; ultimoError: string | null; creadaEn: number }
+  | { id: string; tipo: 'tasaDia'; tasa: TasaDia; intentos: number; ultimoError: string | null; creadaEn: number }
 
 /** @deprecated se mantiene el nombre viejo para no romper importaciones */
 export type VentaPendiente = Pendiente
@@ -87,6 +90,7 @@ class LicoreriaDB extends Dexie {
   ajustes!: EntityTable<AjusteInventario, 'id'>
   vacios!: EntityTable<MovimientoVacios, 'id'>
   devoluciones!: EntityTable<Devolucion, 'id'>
+  tasasDia!: EntityTable<TasaDia, 'id'>
   config!: EntityTable<Config, 'clave'>
 
   constructor() {
@@ -181,6 +185,20 @@ class LicoreriaDB extends Dexie {
     // Versión 7: devoluciones parciales de cliente.
     this.version(7).stores({
       devoluciones: 'id, dia, clienteId, fecha',
+    })
+
+    /*
+     * Versión 8: las tasas pasan a llevarse por día.
+     *
+     * Antes había una sola tasa por moneda, la de hoy, y se pisaba cada mañana.
+     * Eso hacía imposible cargar un día atrasado con la tasa que de verdad
+     * corría ese día: se cobraba el lunes con el cambio del jueves.
+     *
+     * La tabla vieja se conserva y sigue guardando la última: es la que usa la
+     * pantalla cuando no hay ninguna cargada para la fecha que se está mirando.
+     */
+    this.version(8).stores({
+      tasasDia: 'id, dia, moneda',
     })
   }
 }
@@ -788,6 +806,71 @@ export async function reabrirCierre(dia: DiaNegocio): Promise<void> {
   for (const id of aAnular) await anularVenta(id)
 
   await guardarCierreDia({ ...actual, reabiertoEn: Date.now() })
+}
+
+/**
+ * Guarda la tasa de una moneda PARA UN DÍA concreto.
+ *
+ * También actualiza la tabla de tasas "actuales" cuando el día es igual o más
+ * nuevo que el que ya estaba: así lo que se ve por defecto sigue siendo lo
+ * último, y corregir una tasa de hace una semana no cambia la de hoy.
+ */
+export async function guardarTasaDia(
+  dia: DiaNegocio,
+  moneda: MonedaCodigo,
+  tasa: number,
+  usuarioId: string,
+): Promise<void> {
+  const fila: TasaDia = {
+    id: idTasaDia(dia, moneda),
+    dia,
+    moneda,
+    tasa,
+    registradaEn: Date.now(),
+    usuarioId,
+    sincronizadaEn: null,
+  }
+
+  await db.transaction('rw', [db.tasasDia, db.tasas, db.outbox], async () => {
+    await db.tasasDia.put(fila)
+
+    const masNueva = await db.tasasDia.where('moneda').equals(moneda).toArray()
+    const ultima = masNueva.sort((a, b) => b.dia.localeCompare(a.dia))[0]
+    if (ultima && ultima.dia === dia) {
+      await db.tasas.put({ id: moneda, moneda, tasa, fecha: Date.now(), fuente: 'manual' })
+    }
+
+    await db.outbox.put({
+      id: fila.id,
+      tipo: 'tasaDia',
+      tasa: fila,
+      intentos: 0,
+      ultimoError: null,
+      creadaEn: Date.now(),
+    })
+  })
+}
+
+/** Todas las tasas cargadas, para el historial y para resolver cualquier fecha */
+export async function cargarTasasDia(): Promise<TasaDia[]> {
+  return db.tasasDia.toArray()
+}
+
+/**
+ * Las tasas que rigen un día: las de ese día, o las últimas anteriores.
+ *
+ * Arrastrar la anterior es lo correcto cuando nadie cargó la tasa: el cambio
+ * no desaparece porque el encargado no llegara a teclearlo, simplemente sigue
+ * el del último día que sí se cargó. Devolver cero dejaría el cierre sin poder
+ * convertir nada.
+ */
+export async function tasasDelDia(dia: DiaNegocio): Promise<Record<string, number>> {
+  const todas = await cargarTasasDia()
+  if (todas.length === 0) {
+    const actuales = await db.tasas.toArray()
+    return Object.fromEntries(actuales.map((t) => [t.moneda, t.tasa]))
+  }
+  return tasasVigentes(dia, todas)
 }
 
 export async function guardarTasa(moneda: MonedaCodigo, tasa: number): Promise<void> {
