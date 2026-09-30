@@ -11,7 +11,7 @@ import { cuadrar, type Recibido } from '../domain/cuadre'
 import { MONEDAS, formato, formatoNumero, parsearMonto } from '../domain/money'
 import { inicioDe } from '../domain/dias'
 import type { MonedaCodigo, Producto, UUID } from '../domain/types'
-import { UBICACION_FRIO, UBICACION_VENTA_DEFECTO } from '../data/seed'
+import { UBICACION_VENTA_DEFECTO } from '../data/seed'
 import type { Pos } from '../hooks/usePos'
 import { Precio } from './moneda'
 import { ActaCierre } from './ActaCierre'
@@ -140,12 +140,10 @@ export function CierreDiaView({ pos }: { pos: Pos }) {
       const linea = carro.lineas.find((l) => l.productoId === producto.id)
       if (linea) return cambiarCantidad(carro, linea.id, cantidad)
       if (cantidad <= 0) return carro
-      const enSala = pos.stockDisponible(producto.id, UBICACION_VENTA_DEFECTO)
-      const enNevera = pos.stockDisponible(producto.id, UBICACION_FRIO)
       return agregar(carro, {
         producto,
         presentacion: base,
-        ubicacionId: enSala <= 0 && enNevera > 0 ? UBICACION_FRIO : UBICACION_VENTA_DEFECTO,
+        ubicacionId: UBICACION_VENTA_DEFECTO,
         cantidad,
       })
     })
@@ -208,10 +206,8 @@ export function CierreDiaView({ pos }: { pos: Pos }) {
                     key={p.id}
                     producto={p}
                     cantidad={cantidadDe.get(p.id) ?? 0}
-                    precio={precioDe(p, snap, pos, momento)}
-                    stock={
-                      pos.stockDe(p.id, UBICACION_VENTA_DEFECTO) + pos.stockDe(p.id, UBICACION_FRIO)
-                    }
+                    precio={precioDe(p, snap, momento)}
+                    stock={pos.stockDe(p.id, UBICACION_VENTA_DEFECTO)}
                     onCantidad={(n) => poner(p, n)}
                   />
                 ))}
@@ -499,19 +495,13 @@ function PasoDinero({
   )
 }
 
-function precioDe(
-  p: Producto,
-  s: NonNullable<Pos['snapshot']>,
-  pos: Pos,
-  momento: number,
-): number {
+function precioDe(p: Producto, s: NonNullable<Pos['snapshot']>, momento: number): number {
   const base = s.presentacionesPorProducto.get(p.id)?.find((x) => x.esBase)
   if (!base) return 0
-  const enSala = pos.stockDisponible(p.id, UBICACION_VENTA_DEFECTO)
   const conLinea = agregar(carritoVacio(), {
     producto: p,
     presentacion: base,
-    ubicacionId: enSala <= 0 ? UBICACION_FRIO : UBICACION_VENTA_DEFECTO,
+    ubicacionId: UBICACION_VENTA_DEFECTO,
     cantidad: 1,
   })
   const listo = recalcular(

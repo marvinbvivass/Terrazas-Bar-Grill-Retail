@@ -38,7 +38,6 @@ export interface PresentacionForm {
   factor: number
   /** Precio de la presentación completa */
   precio: number
-  codigo?: string
 }
 
 export interface ProductoForm {
@@ -50,16 +49,13 @@ export interface ProductoForm {
   marca?: string
   contenidoMl?: number
   gradoAlcohol?: number
-  codigoBarras?: string
   /** Precio de UNA unidad, con IVA incluido */
   precioDetal: number
-  /** Precio de la misma unidad sacada de la nevera. Vacío = mismo que detal. */
-  precioFrio?: number
   costo: number
   exento?: boolean
   retornable?: boolean
-  stockSala?: number
-  stockNevera?: number
+  /** Existencia inicial. Solo se usa al crear: después se mueve por recepciones y ventas. */
+  stock?: number
   stockMin?: number
   presentaciones?: PresentacionForm[]
   /** Genera el precio de mayor automáticamente. Por defecto sí. */
@@ -75,10 +71,16 @@ export interface ProductoArmado {
 }
 
 export interface ContextoCatalogo {
-  ubicacionSala: UUID
-  ubicacionNevera: UUID
+  /**
+   * La única ubicación de venta.
+   *
+   * El sistema llevaba el stock partido entre sala y nevera, y el precio de
+   * frío salía de esa separación. El negocio lleva un inventario general: una
+   * botella es una botella esté donde esté, y partirla obligaba a registrar
+   * traslados que nadie iba a registrar.
+   */
+  ubicacion: UUID
   listaDetal: UUID
-  listaFrio: UUID
   listaMayorBulto: UUID
   listaMayorResto: UUID
 }
@@ -133,10 +135,9 @@ export function armarProducto(form: ProductoForm, ctx: ContextoCatalogo): Produc
     },
   ]
 
+  // Sin códigos de barras: el mostrador no usa escáner y el campo solo era un
+  // paso más que rellenar al dar de alta un producto.
   const codigos: CodigoBarras[] = []
-  if (form.codigoBarras?.trim()) {
-    codigos.push({ codigo: form.codigoBarras.trim(), presentacionId: baseId, tipo: 'EAN13' })
-  }
 
   const precios: Precio[] = [
     {
@@ -148,19 +149,6 @@ export function armarProducto(form: ProductoForm, ctx: ContextoCatalogo): Produc
       vigenteHasta: null,
     },
   ]
-
-  // Solo si el producto se vende más caro frío. Si no, la lista Frío no tiene
-  // fila para él y la resolución cae sola en Detal.
-  if (form.precioFrio !== undefined && form.precioFrio > 0) {
-    precios.push({
-      id: `${baseId}-frio`,
-      listaId: ctx.listaFrio,
-      presentacionId: baseId,
-      precio: redondear(form.precioFrio, 2),
-      vigenteDesde: ahora,
-      vigenteHasta: null,
-    })
-  }
 
   if (form.conMayoreo !== false) {
     const porBulto = CATEGORIA_BULTO.has(form.categoriaId)
@@ -189,9 +177,6 @@ export function armarProducto(form: ProductoForm, ctx: ContextoCatalogo): Produc
       permiteCompra: p.factor >= 6,
       activo: true,
     })
-    if (p.codigo?.trim()) {
-      codigos.push({ codigo: p.codigo.trim(), presentacionId: presId, tipo: 'DUN14' })
-    }
     precios.push({
       id: `${presId}-detal`,
       listaId: ctx.listaDetal,
@@ -205,19 +190,8 @@ export function armarProducto(form: ProductoForm, ctx: ContextoCatalogo): Produc
 
   // --- Existencia inicial ---
   const existencias: Existencia[] = []
-  if ((form.stockSala ?? 0) !== 0) {
-    existencias.push({
-      productoId,
-      ubicacionId: ctx.ubicacionSala,
-      cantidadBase: form.stockSala ?? 0,
-    })
-  }
-  if ((form.stockNevera ?? 0) !== 0) {
-    existencias.push({
-      productoId,
-      ubicacionId: ctx.ubicacionNevera,
-      cantidadBase: form.stockNevera ?? 0,
-    })
+  if ((form.stock ?? 0) !== 0) {
+    existencias.push({ productoId, ubicacionId: ctx.ubicacion, cantidadBase: form.stock ?? 0 })
   }
 
   return { producto, presentaciones, codigos, precios, existencias }
@@ -227,7 +201,8 @@ export function armarProducto(form: ProductoForm, ctx: ContextoCatalogo): Produc
 export function desarmarProducto(
   producto: Producto,
   presentaciones: Presentacion[],
-  codigos: CodigoBarras[],
+  /** Se conserva en la firma para no tocar a quien llama; ya no se usa. */
+  _codigos: CodigoBarras[],
   precios: Precio[],
   existencias: Map<string, number>,
   ctx: ContextoCatalogo,
@@ -246,20 +221,16 @@ export function desarmarProducto(
     marca: producto.marca,
     contenidoMl: producto.contenidoMl,
     gradoAlcohol: producto.gradoAlcohol,
-    codigoBarras: base ? codigos.find((c) => c.presentacionId === base.id)?.codigo : undefined,
     precioDetal: (base && precioDe(base.id, ctx.listaDetal)) ?? 0,
-    precioFrio: base ? precioDe(base.id, ctx.listaFrio) : undefined,
     costo: producto.costoPromedio,
     exento: producto.iva === 0,
     retornable: producto.retornable,
-    stockSala: existencias.get(`${producto.id}::${ctx.ubicacionSala}`) ?? 0,
-    stockNevera: existencias.get(`${producto.id}::${ctx.ubicacionNevera}`) ?? 0,
+    stock: existencias.get(`${producto.id}::${ctx.ubicacion}`) ?? 0,
     stockMin: producto.stockMin,
     presentaciones: extras.map((p) => ({
       nombre: p.nombre,
       factor: p.factor,
       precio: precioDe(p.id, ctx.listaDetal) ?? 0,
-      codigo: codigos.find((c) => c.presentacionId === p.id)?.codigo,
     })),
   }
 }
@@ -278,9 +249,6 @@ export function validarProducto(form: ProductoForm): ProblemaCatalogo[] {
   if (form.costo < 0) p.push({ campo: 'costo', mensaje: 'El costo no puede ser negativo' })
   if (form.costo > 0 && form.precioDetal > 0 && form.costo >= form.precioDetal) {
     p.push({ campo: 'costo', mensaje: 'El costo es igual o mayor que el precio: estarías vendiendo a pérdida' })
-  }
-  if (form.precioFrio !== undefined && form.precioFrio > 0 && form.precioFrio < form.precioDetal) {
-    p.push({ campo: 'precioFrio', mensaje: 'El precio frío es menor que el de sala. ¿Seguro?' })
   }
   for (const pr of form.presentaciones ?? []) {
     if (pr.nombre.trim() && !(pr.factor > 1)) {

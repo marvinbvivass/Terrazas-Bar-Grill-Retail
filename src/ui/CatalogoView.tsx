@@ -8,7 +8,7 @@ import {
   type ProductoForm,
 } from '../domain/catalogo'
 import { formato, parsearMonto } from '../domain/money'
-import { CONTEXTO_CATALOGO, UBICACION_FRIO, UBICACION_VENTA_DEFECTO } from '../data/seed'
+import { CONTEXTO_CATALOGO, UBICACION_VENTA_DEFECTO } from '../data/seed'
 import type { Producto } from '../domain/types'
 import type { Pos } from '../hooks/usePos'
 
@@ -18,8 +18,7 @@ const VACIO: ProductoForm = {
   categoriaId: 'cat-cerveza',
   precioDetal: 0,
   costo: 0,
-  stockSala: 0,
-  stockNevera: 0,
+  stock: 0,
   stockMin: 0,
   presentaciones: [],
 }
@@ -116,8 +115,7 @@ export function CatalogoView({ pos }: { pos: Pos }) {
                 const precio = base
                   ? s?.precios.find((x) => x.presentacionId === base.id && x.listaId === 'lst-detal')?.precio
                   : undefined
-                const enSala = pos.stockDe(p.id, UBICACION_VENTA_DEFECTO)
-                const enNevera = pos.stockDe(p.id, UBICACION_FRIO)
+                const existencia = pos.stockDe(p.id, UBICACION_VENTA_DEFECTO)
                 const m = precio ? margen(precio, p.costoPromedio, p.iva) : 0
 
                 return (
@@ -142,10 +140,7 @@ export function CatalogoView({ pos }: { pos: Pos }) {
                         </p>
                       </div>
                       <div className="w-24 text-right">
-                        <p className="tabular text-[13px]">{enSala + enNevera} und</p>
-                        {enNevera > 0 && (
-                          <p className="tabular font-mono text-[10px] text-frio">{enNevera} frío</p>
-                        )}
+                        <p className="tabular text-[13px]">{existencia} und</p>
                       </div>
                     </button>
                   </li>
@@ -175,7 +170,7 @@ function Editor({
   const esNuevo = !inicial.id
 
   const problemas = validarProducto(f)
-  const puedeGuardar = problemas.filter((p) => p.campo !== 'precioFrio' && p.campo !== 'costo').length === 0 && f.precioDetal > 0
+  const puedeGuardar = problemas.filter((p) => p.campo !== 'costo').length === 0 && f.precioDetal > 0
   const m = margen(f.precioDetal, f.costo, f.exento ? 0 : 0.16)
 
   const set = <K extends keyof ProductoForm>(k: K, v: ProductoForm[K]) => setF((x) => ({ ...x, [k]: v }))
@@ -253,16 +248,6 @@ function Editor({
             </select>
           </Campo>
 
-          <Campo etiqueta="Código de barras" ayuda="Opcional: sin él se toca en pantalla">
-            <input
-              value={f.codigoBarras ?? ''}
-              onChange={(e) => set('codigoBarras', e.target.value)}
-              inputMode="numeric"
-              placeholder="7591234000018"
-              className={entrada}
-            />
-          </Campo>
-
           <Campo etiqueta="Contenido ml" ayuda="Opcional">
             <input
               value={f.contenidoMl ?? ''}
@@ -282,16 +267,6 @@ function Editor({
               inputMode="decimal"
               placeholder="1,00"
               className={`${entrada} text-right text-lg font-bold`}
-            />
-          </Campo>
-
-          <Campo etiqueta="Precio frío" ayuda="Solo si lo cobras más caro de la nevera">
-            <input
-              value={f.precioFrio || ''}
-              onChange={(e) => set('precioFrio', parsearMonto(e.target.value) || undefined)}
-              inputMode="decimal"
-              placeholder="igual que arriba"
-              className={`${entrada} text-right`}
             />
           </Campo>
 
@@ -383,29 +358,17 @@ function Editor({
         {/* --- Stock --- */}
         <Bloque titulo={esNuevo ? 'Cuánto tienes hoy' : 'Existencia'}>
           {esNuevo ? (
-            <>
-              <Campo etiqueta="En la sala" ayuda="Unidades en el anaquel">
-                <input
-                  value={f.stockSala || ''}
-                  onChange={(e) => set('stockSala', Number(e.target.value) || 0)}
-                  inputMode="numeric"
-                  className={`${entrada} text-right`}
-                />
-              </Campo>
-              <Campo etiqueta="En la nevera">
-                <input
-                  value={f.stockNevera || ''}
-                  onChange={(e) => set('stockNevera', Number(e.target.value) || 0)}
-                  inputMode="numeric"
-                  className={`${entrada} text-right`}
-                />
-              </Campo>
-            </>
+            <Campo etiqueta="Cuántas unidades tienes" ayuda="Lo que hay ahora mismo">
+              <input
+                value={f.stock || ''}
+                onChange={(e) => set('stock', Number(e.target.value) || 0)}
+                inputMode="numeric"
+                className={`${entrada} text-right`}
+              />
+            </Campo>
           ) : (
             <div className="col-span-2 rounded-lg border border-linea bg-panel2 px-3 py-2.5">
-              <p className="text-[13.5px] font-semibold">
-                Sala {f.stockSala} · Nevera {f.stockNevera}
-              </p>
+              <p className="text-[13.5px] font-semibold">{f.stock} unidades</p>
               <p className="pt-1 text-[12.5px] leading-relaxed text-tinta2">
                 La existencia no se edita aquí. Sube con <b>Inventario → Recibir mercancía</b> y
                 baja al cerrar el día, y así cada movimiento deja constancia de cuándo, cuánto y

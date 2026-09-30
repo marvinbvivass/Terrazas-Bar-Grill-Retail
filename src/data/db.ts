@@ -109,6 +109,53 @@ class LicoreriaDB extends Dexie {
     this.version(3).stores({
       recepciones: 'id, dia, fecha',
     })
+
+    /*
+     * Versión 4: inventario general.
+     *
+     * El stock vivía partido entre sala y nevera. Los teléfonos que ya tengan
+     * datos traen existencias en las dos, y si no se juntaran, lo que estuviera
+     * en la nevera desaparecería de la pantalla: seguiría en la base, sin
+     * ninguna ubicación que lo muestre, y el encargado creería que le robaron.
+     *
+     * Se suman en `ubi-general` y se retira la lista de precio Frío con sus
+     * filas: sin la nevera como ubicación, esa lista no se activaría nunca, y
+     * dejarla ahí solo sirve para confundir a quien mire los precios mañana.
+     */
+    this.version(4)
+      .stores({})
+      .upgrade(async (tx) => {
+        const existencias = await tx.table('existencias').toArray()
+        const juntas = new Map<string, number>()
+        for (const e of existencias) {
+          juntas.set(e.productoId, (juntas.get(e.productoId) ?? 0) + (e.cantidadBase ?? 0))
+        }
+
+        await tx.table('existencias').clear()
+        for (const [productoId, cantidadBase] of juntas) {
+          await tx.table('existencias').put({
+            id: `${productoId}::ubi-general`,
+            productoId,
+            ubicacionId: 'ubi-general',
+            cantidadBase,
+          })
+        }
+
+        await tx.table('ubicaciones').clear()
+        await tx.table('ubicaciones').put({
+          id: 'ubi-general',
+          nombre: 'General',
+          tipo: 'sala',
+          refrigerado: false,
+          permiteVenta: true,
+        })
+
+        const precios = await tx.table('precios').toArray()
+        for (const precio of precios) {
+          if (precio.listaId === 'lst-frio') await tx.table('precios').delete(precio.id)
+        }
+        await tx.table('listas').delete('lst-frio')
+      })
   }
 }
 

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { HojaRecepcion } from './HojaRecepcion'
 import { formato, redondear } from '../domain/money'
 import type { Pos } from '../hooks/usePos'
-import { UBICACION_FRIO, UBICACION_VENTA_DEFECTO } from '../data/seed'
+import { UBICACION_VENTA_DEFECTO } from '../data/seed'
 import { Precio } from './moneda'
 
 type Orden = 'nombre' | 'menos' | 'valor'
@@ -15,8 +15,7 @@ type Orden = 'nombre' | 'menos' | 'valor'
  * permite saber si faltan botellas porque se rompieron, se las llevó alguien o
  * nunca llegaron.
  *
- * Lo que todavía no hay: mermas, conteo físico y traslados entre el anaquel y
- * la nevera.
+ * Lo que todavía no hay: mermas y conteo físico.
  */
 export function InventarioView({ pos }: { pos: Pos }) {
   const [busqueda, setBusqueda] = useState('')
@@ -36,13 +35,9 @@ export function InventarioView({ pos }: { pos: Pos }) {
           p.sku.toLowerCase().includes(q),
       )
       .map((p) => {
-        const sala = pos.stockDe(p.id, UBICACION_VENTA_DEFECTO)
-        const nevera = pos.stockDe(p.id, UBICACION_FRIO)
-        const total = sala + nevera
+        const total = pos.stockDe(p.id, UBICACION_VENTA_DEFECTO)
         return {
           producto: p,
-          sala,
-          nevera,
           total,
           valor: redondear(total * p.costoPromedio, 2),
           bajo: p.stockMin > 0 && total <= p.stockMin,
@@ -136,9 +131,8 @@ export function InventarioView({ pos }: { pos: Pos }) {
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[14.5px] font-semibold">{f.producto.nombreCorto}</p>
                   <p className="flex items-center gap-2 pt-0.5 font-mono text-[10.5px] text-apagado">
-                    <span>sala {f.sala}</span>
-                    <span className="text-frio">nevera {f.nevera}</span>
-                    {f.producto.stockMin > 0 && <span>mín {f.producto.stockMin}</span>}
+                    {f.producto.stockMin > 0 && <span>mínimo {f.producto.stockMin}</span>}
+                    <span>costo {formato(f.producto.costoPromedio, 'USD')}</span>
                   </p>
                 </div>
                 <div className="shrink-0 text-right">
@@ -157,8 +151,8 @@ export function InventarioView({ pos }: { pos: Pos }) {
         )}
 
         <p className="px-1 pt-4 text-center text-[12px] leading-relaxed text-apagado">
-          El stock sube al recibir mercancía y baja al cerrar el día. Mermas, conteo físico y
-          traslados a la nevera todavía no están.
+          El stock sube al recibir mercancía y baja al cerrar el día. Mermas y conteo físico
+          todavía no están.
         </p>
       </div>
 

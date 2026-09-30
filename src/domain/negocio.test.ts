@@ -23,7 +23,6 @@ import {
   CATALOGO,
   EFECTIVO_BS,
   EFECTIVO_USD,
-  NEVERA,
   POLAR,
   PRESENTACIONES_MAPA,
   SALA,
@@ -36,10 +35,9 @@ import type { Venta } from './types'
  * El día a día del negocio, simulado de punta a punta.
  *
  * Estas pruebas no comprueban una función suelta: recorren las situaciones que
- * de verdad ocurren en el mostrador —la fría que cuesta más, el que se lleva
- * una caja, el que queda debiendo, el que abona a medias, el día que no
- * cuadra— y verifican que las dos cuentas que le importan al dueño siguen
- * bien:
+ * de verdad ocurren en el mostrador —el que se lleva una caja, el que queda
+ * debiendo, el que abona a medias, el día que no cuadra— y verifican que las
+ * dos cuentas que le importan al dueño siguen bien:
  *
  *   LO QUE HAY EN LA GAVETA   y   LO QUE HAY EN EL ANAQUEL
  *
@@ -64,14 +62,11 @@ function datos(dia = DIA) {
   }
 }
 
-/** Arma el carrito del día: cuántas botellas salieron y de dónde */
-function vender(sala: number, nevera = 0, presentacion = BOTELLA) {
+/** Arma el carrito del día: cuántas botellas salieron */
+function vender(cantidad: number, presentacion = BOTELLA) {
   let c = carritoVacio()
-  if (sala > 0) {
-    c = agregar(c, { producto: POLAR, presentacion, ubicacionId: SALA.id, cantidad: sala })
-  }
-  if (nevera > 0) {
-    c = agregar(c, { producto: POLAR, presentacion, ubicacionId: NEVERA.id, cantidad: nevera })
+  if (cantidad > 0) {
+    c = agregar(c, { producto: POLAR, presentacion, ubicacionId: SALA.id, cantidad })
   }
   // Escalones apagados: esto simula la pantalla de cierre, que es donde el
   // encargado carga el día. Para el precio de mostrador está `vialMostrador`.
@@ -87,17 +82,6 @@ function mostrador(cantidad: number, presentacion = BOTELLA, ubicacionId = SALA.
 }
 
 describe('el precio que se cobra', () => {
-  it('la fría cuesta más que la del anaquel, sin duplicar el producto', () => {
-    const c = vender(10, 10)
-    const alTiempo = c.lineas.find((l) => l.ubicacionId === SALA.id)
-    const fria = c.lineas.find((l) => l.ubicacionId === NEVERA.id)
-
-    expect(alTiempo?.precioUnitario).toBe(1.0)
-    expect(fria?.precioUnitario).toBe(1.25)
-    // Es el MISMO producto: el precio lo decide la ubicación, no el catálogo.
-    expect(alTiempo?.productoId).toBe(fria?.productoId)
-  })
-
   it('al que se lleva una caja entera se le hace el precio de mayor solo', () => {
     // La lista de mayor arranca en 36 unidades.
     expect(mostrador(24).lineas[0]?.precioUnitario).toBe(1.0)
@@ -144,7 +128,7 @@ describe('el precio que se cobra', () => {
 
 describe('un día normal, todo de contado', () => {
   it('cuadra cuando lo contado en la gaveta es lo que se vendió', () => {
-    const carrito = vender(30, 12) // 30 al tiempo a 1,00 + 12 frías a 1,25 = 45
+    const carrito = vender(45) // 45 botellas a 1,00
     const t = totales(carrito)
     expect(t.total).toBe(45)
 
@@ -187,21 +171,14 @@ describe('un día normal, todo de contado', () => {
   })
 
   it('el inventario baja exactamente lo que salió, ni una botella más', () => {
-    const carrito = vender(30, 12)
+    const carrito = vender(42)
     const venta = construirVentaDelDia(
-      { ...carrito, pagos: construirPagosDelCierre({ USD: 45 }, TASAS, METODOS) },
+      { ...carrito, pagos: construirPagosDelCierre({ USD: 42 }, TASAS, METODOS) },
       datos(),
       0,
     )
-    const salidaSala = venta.lineas
-      .filter((l) => l.ubicacionId === SALA.id)
-      .reduce((s, l) => s + l.cantidadBase, 0)
-    const salidaNevera = venta.lineas
-      .filter((l) => l.ubicacionId === NEVERA.id)
-      .reduce((s, l) => s + l.cantidadBase, 0)
-
-    expect(salidaSala).toBe(30)
-    expect(salidaNevera).toBe(12)
+    const salida = venta.lineas.reduce((s, l) => s + l.cantidadBase, 0)
+    expect(salida).toBe(42)
   })
 })
 

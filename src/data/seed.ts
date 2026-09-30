@@ -13,22 +13,29 @@ import type {
  * crean al fiar la primera venta.
  *
  * Lo que sí hay es la estructura sin la cual la aplicación no puede funcionar:
- * dónde está la mercancía (sala y nevera), qué listas de precio existen y con
- * qué prioridad, y con qué se puede cobrar. Eso no son datos del negocio, son
+ * dónde está la mercancía, qué listas de precio existen y con qué prioridad, y
+ * con qué se puede cobrar. Eso no son datos del negocio, son
  * las piezas del mecanismo — el motor de precios no tiene cómo resolver nada si
  * no existe al menos una lista.
  *
  * Todo esto es editable después; son valores de arranque, no decisiones fijas.
  */
 
+/**
+ * Una sola ubicación: inventario general.
+ *
+ * Antes eran sala y nevera, y de esa separación salía el precio de frío. El
+ * negocio lleva un inventario general: una botella es una botella esté en el
+ * anaquel o enfriándose, y mantener las dos al día exigía registrar cada
+ * traslado a la nevera, cosa que nadie iba a hacer. La consecuencia de no
+ * hacerlo era peor que no tener la separación: las existencias de cada sitio
+ * dejaban de reflejar la realidad y el precio se resolvía contra un dato falso.
+ */
 export const UBICACIONES: Ubicacion[] = [
-  { id: 'ubi-sala', nombre: 'Sala', tipo: 'sala', refrigerado: false, permiteVenta: true },
-  { id: 'ubi-nevera', nombre: 'Nevera', tipo: 'refrigerado', refrigerado: true, permiteVenta: true },
-  { id: 'ubi-deposito', nombre: 'Depósito', tipo: 'deposito', refrigerado: false, permiteVenta: false },
+  { id: 'ubi-general', nombre: 'General', tipo: 'sala', refrigerado: false, permiteVenta: true },
 ]
 
-export const UBICACION_VENTA_DEFECTO = 'ubi-sala'
-export const UBICACION_FRIO = 'ubi-nevera'
+export const UBICACION_VENTA_DEFECTO = 'ubi-general'
 
 export const CATEGORIAS: Categoria[] = [
   { id: 'cat-cerveza', nombre: 'Cerveza', orden: 1 },
@@ -55,15 +62,12 @@ export const CATEGORIAS: Categoria[] = [
 export const LISTAS_PRECIO: ListaPrecio[] = [
   { id: 'lst-mayor', nombre: 'Mayor', moneda: 'USD', prioridad: 20, cantidadMin: 24, ubicacionId: null, tipoCliente: null, activo: true },
   { id: 'lst-mayor6', nombre: 'Mayor', moneda: 'USD', prioridad: 25, cantidadMin: 6, ubicacionId: null, tipoCliente: null, activo: true },
-  { id: 'lst-frio', nombre: 'Frío', moneda: 'USD', prioridad: 50, cantidadMin: null, ubicacionId: UBICACION_FRIO, tipoCliente: null, activo: true },
   { id: 'lst-detal', nombre: 'Detal', moneda: 'USD', prioridad: 100, cantidadMin: null, ubicacionId: null, tipoCliente: null, activo: true },
 ]
 
 export const CONTEXTO_CATALOGO = {
-  ubicacionSala: UBICACION_VENTA_DEFECTO,
-  ubicacionNevera: UBICACION_FRIO,
+  ubicacion: UBICACION_VENTA_DEFECTO,
   listaDetal: 'lst-detal',
-  listaFrio: 'lst-frio',
   listaMayorBulto: 'lst-mayor',
   listaMayorResto: 'lst-mayor6',
 } as const

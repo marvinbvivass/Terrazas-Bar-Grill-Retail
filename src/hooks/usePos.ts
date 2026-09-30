@@ -3,7 +3,6 @@ import {
   agregar,
   agregarPago,
   cambiarCantidad,
-  cambiarUbicacion,
   carritoVacio,
   construirPagosDelCierre,
   construirVentaContado,
@@ -55,7 +54,7 @@ import {
   siguienteFolio,
   type Snapshot,
 } from '../data/db'
-import { UBICACION_FRIO, UBICACION_VENTA_DEFECTO } from '../data/seed'
+import { UBICACION_VENTA_DEFECTO } from '../data/seed'
 import { bajarSnapshot, configurarTransporte, empujarCola } from '../data/sync'
 
 /** Cada cuánto se intenta sincronizar sola, si hay señal */
@@ -268,12 +267,7 @@ export function usePos() {
         setAviso({ texto: 'El código apunta a un producto que ya no existe', tono: 'error' })
         return false
       }
-      const ubicacion =
-        stockDisponible(producto.id, UBICACION_VENTA_DEFECTO) <= 0 &&
-        stockDisponible(producto.id, UBICACION_FRIO) > 0
-          ? UBICACION_FRIO
-          : UBICACION_VENTA_DEFECTO
-      agregarProducto(producto, presentacion, ubicacion, 1)
+      agregarProducto(producto, presentacion, UBICACION_VENTA_DEFECTO, 1)
       setAviso({ texto: `${producto.nombreCorto} · ${presentacion.nombre}`, tono: 'ok' })
       return true
     },
@@ -286,15 +280,6 @@ export function usePos() {
   )
   const quitarLinea = useCallback(
     (lineaId: UUID) => aplicar(quitar(carrito, lineaId)),
-    [aplicar, carrito],
-  )
-  const alternarFrio = useCallback(
-    (lineaId: UUID) => {
-      const linea = carrito.lineas.find((l) => l.id === lineaId)
-      if (!linea) return
-      const destino = linea.ubicacionId === UBICACION_FRIO ? UBICACION_VENTA_DEFECTO : UBICACION_FRIO
-      aplicar(cambiarUbicacion(carrito, lineaId, destino))
-    },
     [aplicar, carrito],
   )
   const vaciar = useCallback(() => setCarrito(carritoVacio()), [])
@@ -730,7 +715,6 @@ export function usePos() {
     agregarPorCodigo,
     cambiarCantidadLinea,
     quitarLinea,
-    alternarFrio,
     vaciar,
     anadirPago,
     removerPago,

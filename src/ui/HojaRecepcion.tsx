@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { formato, parsearMonto } from '../domain/money'
 import type { EntradaLineaRecepcion } from '../domain/recepcion'
 import type { Presentacion, Producto, UUID } from '../domain/types'
-import { UBICACION_FRIO, UBICACION_VENTA_DEFECTO } from '../data/seed'
+import { UBICACION_VENTA_DEFECTO } from '../data/seed'
 import type { Pos } from '../hooks/usePos'
 import { Hoja } from './Hoja'
 
@@ -215,28 +215,12 @@ export function HojaRecepcion({ pos, onCerrar }: { pos: Pos; onCerrar: () => voi
                 </div>
               </div>
 
-              <div className="flex items-center justify-between gap-2 pt-2">
-                <div className="flex gap-1">
-                  <Donde
-                    activo={r.ubicacionId === UBICACION_VENTA_DEFECTO}
-                    onClick={() => cambiar(r.key, { ubicacionId: UBICACION_VENTA_DEFECTO })}
-                  >
-                    Al anaquel
-                  </Donde>
-                  <Donde
-                    activo={r.ubicacionId === UBICACION_FRIO}
-                    onClick={() => cambiar(r.key, { ubicacionId: UBICACION_FRIO })}
-                  >
-                    A la nevera
-                  </Donde>
-                </div>
-                {cantidad > 0 && (
-                  <p className="tabular text-right text-[11.5px] text-apagado">
-                    {cantidad * factor} u.
-                    {costo > 0 && ` · ${formato(costo / factor, 'USD')} c/u`}
-                  </p>
-                )}
-              </div>
+              {cantidad > 0 && (
+                <p className="tabular pt-2 text-right text-[11.5px] text-apagado">
+                  {cantidad * factor} u.
+                  {costo > 0 && ` · ${formato(costo / factor, 'USD')} c/u`}
+                </p>
+              )}
             </div>
           )
         })}
@@ -271,27 +255,5 @@ export function HojaRecepcion({ pos, onCerrar }: { pos: Pos; onCerrar: () => voi
         )}
       </div>
     </Hoja>
-  )
-}
-
-function Donde({
-  activo,
-  onClick,
-  children,
-}: {
-  activo: boolean
-  onClick: () => void
-  children: React.ReactNode
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`rounded-full border px-2.5 py-1 text-[11.5px] font-semibold ${
-        activo ? 'border-cobre bg-cobre/15 text-cobre2' : 'border-linea text-apagado'
-      }`}
-      style={{ minHeight: 0 }}
-    >
-      {children}
-    </button>
   )
 }

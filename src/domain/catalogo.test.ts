@@ -3,10 +3,8 @@ import { armarProducto, desarmarProducto, margen, validarProducto, type Contexto
 import { resolverPrecio } from './pricing'
 
 const CTX: ContextoCatalogo = {
-  ubicacionSala: 'ubi-sala',
-  ubicacionNevera: 'ubi-nevera',
+  ubicacion: 'ubi-general',
   listaDetal: 'lst-detal',
-  listaFrio: 'lst-frio',
   listaMayorBulto: 'lst-mayor',
   listaMayorResto: 'lst-mayor6',
 }
@@ -14,7 +12,6 @@ const CTX: ContextoCatalogo = {
 const LISTAS = [
   { id: 'lst-mayor', nombre: 'Mayor', moneda: 'USD' as const, prioridad: 20, cantidadMin: 24, ubicacionId: null, tipoCliente: null, activo: true },
   { id: 'lst-mayor6', nombre: 'Mayor', moneda: 'USD' as const, prioridad: 25, cantidadMin: 6, ubicacionId: null, tipoCliente: null, activo: true },
-  { id: 'lst-frio', nombre: 'Frío', moneda: 'USD' as const, prioridad: 50, cantidadMin: null, ubicacionId: 'ubi-nevera', tipoCliente: null, activo: true },
   { id: 'lst-detal', nombre: 'Detal', moneda: 'USD' as const, prioridad: 100, cantidadMin: null, ubicacionId: null, tipoCliente: null, activo: true },
 ]
 
@@ -23,12 +20,9 @@ const cerveza: ProductoForm = {
   nombreCorto: 'Polar Pilsen',
   categoriaId: 'cat-cerveza',
   precioDetal: 1.0,
-  precioFrio: 1.25,
   costo: 0.6,
   retornable: true,
-  codigoBarras: '7591234000018',
-  stockSala: 264,
-  stockNevera: 48,
+  stock: 312,
   stockMin: 72,
   presentaciones: [{ nombre: 'Six-pack', factor: 6, precio: 5.7 }],
 }
@@ -45,7 +39,7 @@ describe('armar un producto desde el formulario', () => {
   it('genera un precio por lista: detal, frío y mayor', () => {
     const a = armarProducto(cerveza, CTX)
     const deBase = a.precios.filter((p) => p.presentacionId.endsWith('-base'))
-    expect(deBase.map((p) => p.listaId).sort()).toEqual(['lst-detal', 'lst-frio', 'lst-mayor'])
+    expect(deBase.map((p) => p.listaId).sort()).toEqual(['lst-detal', 'lst-mayor'])
   })
 
   it('el precio de mayor de una cerveza baja 12% y arranca en 24', () => {
@@ -55,29 +49,14 @@ describe('armar un producto desde el formulario', () => {
   })
 
   it('un licor usa el otro escalón: 8% desde 6 unidades', () => {
-    const ron: ProductoForm = { ...cerveza, categoriaId: 'cat-ron', precioDetal: 10, precioFrio: undefined, costo: 7 }
+    const ron: ProductoForm = { ...cerveza, categoriaId: 'cat-ron', precioDetal: 10, costo: 7 }
     const a = armarProducto(ron, CTX)
     const mayor = a.precios.find((p) => p.listaId === 'lst-mayor6')!
     expect(mayor.precio).toBe(9.2)
     expect(a.precios.some((p) => p.listaId === 'lst-mayor')).toBe(false)
   })
 
-  it('sin precio frío no crea fila en la lista Frío, y el precio cae en Detal', () => {
-    const sinFrio: ProductoForm = { ...cerveza, precioFrio: undefined }
-    const a = armarProducto(sinFrio, CTX)
-    expect(a.precios.some((p) => p.listaId === 'lst-frio')).toBe(false)
-
-    // Comprobado contra el motor de precios de verdad
-    const base = a.presentaciones.find((p) => p.esBase)!
-    const r = resolverPrecio(
-      { presentacionId: base.id, cantidadBase: 1, ubicacionId: 'ubi-nevera', tipoCliente: 'detal', momento: Date.now() + 1000 },
-      { listas: LISTAS, precios: a.precios },
-    )
-    expect(r?.precio).toBe(1.0)
-    expect(r?.listaNombre).toBe('Detal')
-  })
-
-  it('el producto recién armado se resuelve bien en las tres situaciones', () => {
+  it('el mismo precio en cualquier ubicación: el inventario es general', () => {
     const a = armarProducto(cerveza, CTX)
     const base = a.presentaciones.find((p) => p.esBase)!
     const cat = { listas: LISTAS, precios: a.precios }
@@ -85,25 +64,15 @@ describe('armar un producto desde el formulario', () => {
     const precio = (ubicacionId: string, cantidadBase: number) =>
       resolverPrecio({ presentacionId: base.id, cantidadBase, ubicacionId, tipoCliente: 'detal', momento }, cat)
 
-    expect(precio('ubi-sala', 1)?.precio).toBe(1.0)
-    expect(precio('ubi-nevera', 1)?.precio).toBe(1.25)
-    expect(precio('ubi-sala', 24)?.precio).toBe(0.88)
+    expect(precio('ubi-general', 1)?.precio).toBe(1.0)
+    expect(precio('ubi-general', 1)?.listaNombre).toBe('Detal')
+    // El escalón por cantidad sigue en pie: es del producto, no del sitio.
+    expect(precio('ubi-general', 24)?.precio).toBe(0.88)
   })
 
-  it('el código de la unidad y el de la caja apuntan a presentaciones distintas', () => {
-    const conCaja: ProductoForm = {
-      ...cerveza,
-      presentaciones: [
-        { nombre: 'Six-pack', factor: 6, precio: 5.7 },
-        { nombre: 'Caja x36', factor: 36, precio: 30, codigo: '17591234000015' },
-      ],
-    }
-    const a = armarProducto(conCaja, CTX)
-    expect(a.codigos).toHaveLength(2)
-    const unidad = a.codigos.find((c) => c.codigo === '7591234000018')!
-    const caja = a.codigos.find((c) => c.codigo === '17591234000015')!
-    expect(unidad.presentacionId).not.toBe(caja.presentacionId)
-    expect(a.presentaciones.find((p) => p.id === caja.presentacionId)!.factor).toBe(36)
+  it('ya no se generan códigos de barras', () => {
+    const a = armarProducto(cerveza, CTX)
+    expect(a.codigos).toHaveLength(0)
   })
 
   it('una presentación sin precio se cobra proporcional a la unidad', () => {
@@ -113,11 +82,13 @@ describe('armar un producto desde el formulario', () => {
     expect(six.precio).toBe(6.0)
   })
 
-  it('la existencia inicial va a la ubicación que toque, y omite los ceros', () => {
-    const a = armarProducto({ ...cerveza, stockNevera: 0 }, CTX)
+  it('la existencia inicial va a la única ubicación, y omite el cero', () => {
+    const a = armarProducto(cerveza, CTX)
     expect(a.existencias).toHaveLength(1)
-    expect(a.existencias[0]!.ubicacionId).toBe('ubi-sala')
-    expect(a.existencias[0]!.cantidadBase).toBe(264)
+    expect(a.existencias[0]!.ubicacionId).toBe('ubi-general')
+    expect(a.existencias[0]!.cantidadBase).toBe(312)
+
+    expect(armarProducto({ ...cerveza, stock: 0 }, CTX).existencias).toHaveLength(0)
   })
 
   it('un producto exento no lleva IVA', () => {
@@ -147,12 +118,9 @@ describe('ida y vuelta del formulario', () => {
 
     expect(vuelta.nombre).toBe(cerveza.nombre)
     expect(vuelta.precioDetal).toBe(1.0)
-    expect(vuelta.precioFrio).toBe(1.25)
     expect(vuelta.costo).toBe(0.6)
-    expect(vuelta.codigoBarras).toBe('7591234000018')
-    expect(vuelta.stockSala).toBe(264)
-    expect(vuelta.stockNevera).toBe(48)
-    expect(vuelta.presentaciones).toEqual([{ nombre: 'Six-pack', factor: 6, precio: 5.7, codigo: undefined }])
+    expect(vuelta.stock).toBe(312)
+    expect(vuelta.presentaciones).toEqual([{ nombre: 'Six-pack', factor: 6, precio: 5.7 }])
   })
 })
 
@@ -172,8 +140,8 @@ describe('validación', () => {
   })
 
   it('avisa si el precio frío es menor que el de sala', () => {
-    const malo = validarProducto({ ...cerveza, precioFrio: 0.9 })
-    expect(malo.some((x) => x.campo === 'precioFrio')).toBe(true)
+    const malo = validarProducto({ ...cerveza, costo: 1.5 })
+    expect(malo.some((x) => x.campo === 'costo')).toBe(true)
   })
 
   it('una presentación de una sola unidad no tiene sentido', () => {
