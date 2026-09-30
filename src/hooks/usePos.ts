@@ -24,6 +24,12 @@ import {
 } from '../domain/cierreDia'
 import type { Recibido } from '../domain/cuadre'
 import {
+  construirConteo,
+  construirMerma,
+  type EntradaConteo,
+  type EntradaMerma,
+} from '../domain/ajuste'
+import {
   construirRecepcion,
   lineaDeRecepcion,
   type EntradaLineaRecepcion,
@@ -40,6 +46,7 @@ import {
   guardarProducto as guardarProductoDb,
   cargarSnapshot,
   cierreDelDia,
+  registrarAjuste,
   registrarRecepcion,
   claveExistencia,
   guardarCierreDia,
@@ -484,6 +491,70 @@ export function usePos() {
     }
   }, [dia])
 
+  /**
+   * Registrar una merma: mercancia que se fue sin venderse.
+   *
+   * Baja el stock y deja el motivo. No toca el costo promedio: que se rompan
+   * seis botellas no cambia lo que costaron las que quedan.
+   */
+  const registrarMerma = useCallback(
+    async (entradas: EntradaMerma[], nota?: string | null) => {
+      if (!snapshot) return null
+      const ajuste = construirMerma(entradas, {
+        dia,
+        fecha: inicioDe(dia) + 12 * 3600_000,
+        usuarioId: snapshot.usuarioId,
+        nota: nota ?? null,
+        creadoOffline: !navigator.onLine,
+      })
+      if (!ajuste) return null
+
+      await registrarAjuste(ajuste)
+      setSnapshot(await cargarSnapshot())
+      setPendientes(await pendientesDeSubir())
+      setAviso({ texto: `Merma registrada: ${formato(ajuste.costoTotal, 'USD')}`, tono: 'ok' })
+      void sincronizar(true)
+      return ajuste
+    },
+    [snapshot, dia, sincronizar],
+  )
+
+  /**
+   * Asentar un conteo fisico.
+   *
+   * Lo que se guarda es la DIFERENCIA contra lo que decia el sistema, no lo
+   * contado: asi el kardex explica el salto en vez de mostrar un numero nuevo
+   * salido de la nada. Los productos que no se cuenten no se tocan, para poder
+   * contar el anaquel por partes sin poner el resto en cero.
+   */
+  const registrarConteo = useCallback(
+    async (entradas: EntradaConteo[], nota?: string | null) => {
+      if (!snapshot) return null
+      const ajuste = construirConteo(entradas, {
+        dia,
+        fecha: inicioDe(dia) + 12 * 3600_000,
+        usuarioId: snapshot.usuarioId,
+        nota: nota ?? null,
+        creadoOffline: !navigator.onLine,
+      })
+      if (!ajuste) {
+        setAviso({ texto: 'El conteo cuadra: no hay nada que ajustar', tono: 'ok' })
+        return null
+      }
+
+      await registrarAjuste(ajuste)
+      setSnapshot(await cargarSnapshot())
+      setPendientes(await pendientesDeSubir())
+      setAviso({
+        texto: `Conteo asentado: ${ajuste.lineas.length} ${ajuste.lineas.length === 1 ? 'producto' : 'productos'} ajustados`,
+        tono: 'ok',
+      })
+      void sincronizar(true)
+      return ajuste
+    },
+    [snapshot, dia, sincronizar],
+  )
+
   const reabrirDia = useCallback(async () => {
     await reabrirCierre(dia)
     // Reabrir anula las ventas de ese cierre y devuelve la mercancía, así que
@@ -727,6 +798,8 @@ export function usePos() {
     cobrar,
     cerrarDia,
     recibirMercancia,
+    registrarMerma,
+    registrarConteo,
     reabrirDia,
     cierreDia,
     crearCliente,

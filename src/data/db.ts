@@ -20,9 +20,11 @@ import type {
 } from '../domain/types'
 import type { CierreDia } from '../domain/cierreDia'
 import type { Recepcion } from '../domain/recepcion'
+import type { AjusteInventario } from '../domain/ajuste'
+import { movimientosDeAjuste } from '../domain/ajuste'
 import { costoPromedioTrasEntrada, entradaPorProducto, movimientosDeRecepcion } from '../domain/recepcion'
 import { idDeCierre } from '../domain/cierreDia'
-import { METODOS_PAGO, TASA_COP_INICIAL, TASA_VES_INICIAL, configuracionInicial } from './seed'
+import { METODOS_PAGO, TASA_COP_INICIAL, TASA_VES_INICIAL, UBICACION_VENTA_DEFECTO, configuracionInicial } from './seed'
 
 /**
  * Réplica local. Es de donde lee la caja SIEMPRE, haya o no señal.
@@ -52,6 +54,7 @@ export type Pendiente =
   // pueden releer de la base más tarde sin cambiar de valor.
   | { id: string; tipo: 'cierre'; cierre: CierreDia; intentos: number; ultimoError: string | null; creadaEn: number }
   | { id: UUID; tipo: 'recepcion'; recepcion: Recepcion; intentos: number; ultimoError: string | null; creadaEn: number }
+  | { id: UUID; tipo: 'ajuste'; ajuste: AjusteInventario; intentos: number; ultimoError: string | null; creadaEn: number }
 
 /** @deprecated se mantiene el nombre viejo para no romper importaciones */
 export type VentaPendiente = Pendiente
@@ -76,6 +79,7 @@ class LicoreriaDB extends Dexie {
   outbox!: Table<Pendiente, string>
   cierres!: EntityTable<CierreDia, 'id'>
   recepciones!: EntityTable<Recepcion, 'id'>
+  ajustes!: EntityTable<AjusteInventario, 'id'>
   config!: EntityTable<Config, 'clave'>
 
   constructor() {
@@ -156,6 +160,11 @@ class LicoreriaDB extends Dexie {
         }
         await tx.table('listas').delete('lst-frio')
       })
+
+    // Versión 5: mermas y conteos físicos.
+    this.version(5).stores({
+      ajustes: 'id, tipo, dia, fecha',
+    })
   }
 }
 
@@ -614,6 +623,47 @@ export async function registrarRecepcion(recepcion: Recepcion): Promise<void> {
       })
     },
   )
+}
+
+/**
+ * Registra una merma o un conteo fisico.
+ *
+ * El documento, sus asientos y las existencias, todo junto o nada. A diferencia
+ * de la recepcion, esto NO toca el costo promedio: encontrar seis botellas de
+ * menos no cambia lo que costaron las que quedan. Tocarlo aqui deformaria el
+ * margen de todas las ventas siguientes por un problema de conteo.
+ */
+export async function registrarAjuste(ajuste: AjusteInventario): Promise<void> {
+  const movimientos = movimientosDeAjuste(ajuste, UBICACION_VENTA_DEFECTO)
+
+  await db.transaction('rw', [db.ajustes, db.movimientos, db.existencias, db.outbox], async () => {
+    await db.ajustes.put(ajuste)
+    await db.movimientos.bulkPut(movimientos)
+
+    for (const m of movimientos) {
+      const id = claveExistencia(m.productoId, m.ubicacionId)
+      const actual = await db.existencias.get(id)
+      await db.existencias.put({
+        id,
+        productoId: m.productoId,
+        ubicacionId: m.ubicacionId,
+        cantidadBase: (actual?.cantidadBase ?? 0) + m.cantidadBase,
+      })
+    }
+
+    await db.outbox.put({
+      id: ajuste.id,
+      tipo: 'ajuste',
+      ajuste,
+      intentos: 0,
+      ultimoError: null,
+      creadaEn: Date.now(),
+    })
+  })
+}
+
+export async function cargarAjustes(limite = 50): Promise<AjusteInventario[]> {
+  return db.ajustes.orderBy('fecha').reverse().limit(limite).toArray()
 }
 
 export async function cargarRecepciones(limite = 50): Promise<Recepcion[]> {

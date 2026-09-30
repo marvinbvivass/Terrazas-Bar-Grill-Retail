@@ -1,6 +1,7 @@
 import { db, type Pendiente } from './db'
 import type { CierreDia } from '../domain/cierreDia'
 import type { Recepcion } from '../domain/recepcion'
+import type { AjusteInventario } from '../domain/ajuste'
 import type { Abono, Venta } from '../domain/types'
 
 /**
@@ -35,6 +36,8 @@ export interface Transporte {
   subirCierres(cierres: CierreDia[]): Promise<void>
   /** Sube las entradas de mercancía. Idempotente por `recepcion.id`. */
   subirRecepciones(recepciones: Recepcion[]): Promise<void>
+  /** Sube mermas y conteos. Idempotente por `ajuste.id`. */
+  subirAjustes(ajustes: AjusteInventario[]): Promise<void>
   /** Baja el catálogo completo. Con pocos productos son unos kilobytes. */
   bajarSnapshot(): Promise<void>
 }
@@ -65,6 +68,9 @@ export const transporteLocal: Transporte = {
   async subirRecepciones() {
     /* sin backend todavía */
   },
+  async subirAjustes() {
+    /* sin backend todavía */
+  },
   async bajarSnapshot() {
     /* sin backend todavía */
   },
@@ -92,6 +98,7 @@ export async function empujarCola(limite = 50): Promise<ResultadoEmpuje> {
   const clientes = pendientes.filter((p) => p.tipo === 'cliente')
   const cierres = pendientes.filter((p) => p.tipo === 'cierre')
   const recepciones = pendientes.filter((p) => p.tipo === 'recepcion')
+  const ajustes = pendientes.filter((p) => p.tipo === 'ajuste')
 
   let aceptadas = 0
   let rechazadas = 0
@@ -140,6 +147,21 @@ export async function empujarCola(limite = 50): Promise<ResultadoEmpuje> {
         }
       })
       aceptadas += recepciones.length
+    }
+
+    // Los ajustes van con las entradas, antes que las ventas: son movimiento de
+    // inventario y el servidor tiene que conocerlos para no ver existencias que
+    // no cuadran con lo que la caja ya descontó.
+    if (ajustes.length) {
+      await transporte.subirAjustes(ajustes.map((p) => p.ajuste))
+      await db.transaction('rw', [db.ajustes, db.outbox], async () => {
+        for (const p of ajustes) {
+          const guardado = await db.ajustes.get(p.id)
+          if (guardado) await db.ajustes.put({ ...guardado, sincronizadoEn: Date.now() })
+          await db.outbox.delete(p.id)
+        }
+      })
+      aceptadas += ajustes.length
     }
 
     const respuestas = [

@@ -16,6 +16,7 @@ import { movimientosDeVenta } from '../domain/cart'
 import { configuracionInicial } from './seed'
 import type { CierreDia } from '../domain/cierreDia'
 import type { Recepcion } from '../domain/recepcion'
+import type { AjusteInventario } from '../domain/ajuste'
 import type { Abono, Venta } from '../domain/types'
 import type { RespuestaSync, Transporte } from './sync'
 
@@ -342,7 +343,20 @@ export async function subirRecepciones(recepciones: Recepcion[]): Promise<void> 
   await lote.commit()
 }
 
+/** Sube mermas y conteos fisicos */
+export async function subirAjustes(ajustes: AjusteInventario[]): Promise<void> {
+  if (ajustes.length === 0) return
+  const lote = writeBatch(fsdb())
+  for (const a of ajustes) {
+    lote.set(doc(fsdb(), 'ajustes', a.id), limpiar({ ...a, sincronizadoEn: Date.now() }))
+  }
+  await lote.commit()
+}
+
 export const transporteFirestore: Transporte = {
+  async subirAjustes(ajustes) {
+    await subirAjustes(ajustes)
+  },
   async subirCierres(cierres) {
     await subirCierres(cierres)
   },

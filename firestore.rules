@@ -112,6 +112,15 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Mermas y conteos fisicos. No se borran: una merma que desaparece es
+    // mercancia que se fue sin que quede constancia de por que.
+    match /ajustes/{id} {
+      allow read:   if sesion();
+      allow create: if sesion();
+      allow update: if sesion();
+      allow delete: if false;
+    }
+
     match /movimientos/{id} {
       allow read:   if sesion();
       allow create: if sesion();

@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react'
 import { HojaRecepcion } from './HojaRecepcion'
+import { HojaMerma } from './HojaMerma'
+import { HojaConteo } from './HojaConteo'
 import { formato, redondear } from '../domain/money'
 import type { Pos } from '../hooks/usePos'
 import { UBICACION_VENTA_DEFECTO } from '../data/seed'
@@ -15,12 +17,14 @@ type Orden = 'nombre' | 'menos' | 'valor'
  * permite saber si faltan botellas porque se rompieron, se las llevó alguien o
  * nunca llegaron.
  *
- * Lo que todavía no hay: mermas y conteo físico.
+ * Las cuatro formas en que se mueve: entra al recibir mercancía, sale al
+ * cerrar el día, sale por merma y se corrige con el conteo físico. Las cuatro
+ * dejan asiento; ninguna toca el stock a mano.
  */
 export function InventarioView({ pos }: { pos: Pos }) {
   const [busqueda, setBusqueda] = useState('')
   const [orden, setOrden] = useState<Orden>('menos')
-  const [recibiendo, setRecibiendo] = useState(false)
+  const [hoja, setHoja] = useState<'ninguna' | 'recibir' | 'merma' | 'conteo'>('ninguna')
   const s = pos.snapshot
 
   const filas = useMemo(() => {
@@ -151,22 +155,40 @@ export function InventarioView({ pos }: { pos: Pos }) {
         )}
 
         <p className="px-1 pt-4 text-center text-[12px] leading-relaxed text-apagado">
-          El stock sube al recibir mercancía y baja al cerrar el día. Mermas y conteo físico
-          todavía no están.
+          El stock sube al recibir mercancía, baja al cerrar el día y se corrige con la merma y
+          el conteo. Las cuatro dejan constancia de cuándo, cuánto y quién.
         </p>
       </div>
 
       <div className="shrink-0 border-t border-linea bg-panel px-3 py-2.5">
         <button
-          onClick={() => setRecibiendo(true)}
+          onClick={() => setHoja('recibir')}
           disabled={s.productos.length === 0}
           className="w-full rounded-xl bg-cobre py-3.5 text-[16px] font-bold text-fondo disabled:opacity-40"
         >
           + Recibir mercancía
         </button>
+        <div className="flex gap-2 pt-2">
+          <button
+            onClick={() => setHoja('conteo')}
+            disabled={s.productos.length === 0}
+            className="flex-1 rounded-xl border border-linea2 py-2.5 text-[14px] font-semibold text-tinta2 disabled:opacity-40"
+          >
+            Conteo físico
+          </button>
+          <button
+            onClick={() => setHoja('merma')}
+            disabled={s.productos.length === 0}
+            className="flex-1 rounded-xl border border-alerta/50 py-2.5 text-[14px] font-semibold text-alerta disabled:opacity-40"
+          >
+            Registrar merma
+          </button>
+        </div>
       </div>
 
-      {recibiendo && <HojaRecepcion pos={pos} onCerrar={() => setRecibiendo(false)} />}
+      {hoja === 'recibir' && <HojaRecepcion pos={pos} onCerrar={() => setHoja('ninguna')} />}
+      {hoja === 'merma' && <HojaMerma pos={pos} onCerrar={() => setHoja('ninguna')} />}
+      {hoja === 'conteo' && <HojaConteo pos={pos} onCerrar={() => setHoja('ninguna')} />}
     </div>
   )
 }
