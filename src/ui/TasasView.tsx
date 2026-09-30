@@ -88,8 +88,26 @@ export function TasasView({ pos }: { pos: Pos }) {
       <div className="scroll-y min-h-0 flex-1 px-3 py-3">
         <Calendario valor={fecha} onElegir={cambiarFecha} marcados={conTasa} />
 
-        <p className="px-1 pt-1.5 pb-3 text-center text-[11.5px] text-apagado">
-          El punto marca los días que ya tienen tasa cargada.
+        {/* Leyenda: sin ella el relleno azul es un color bonito y nada más. */}
+        <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 px-1 pt-2 pb-3">
+          <span className="flex items-center gap-1.5 text-[11.5px] text-apagado">
+            <span className="h-3.5 w-3.5 rounded-full bg-cobre/20 ring-1 ring-cobre/40" />
+            con tasa cargada
+          </span>
+          <span className="flex items-center gap-1.5 text-[11.5px] text-apagado">
+            <span className="h-3.5 w-3.5 rounded-full ring-2 ring-cobre ring-inset" />
+            hoy
+          </span>
+          <span className="flex items-center gap-1.5 text-[11.5px] text-apagado">
+            <span className="h-3.5 w-3.5 rounded-full bg-cobre" />
+            día que estás viendo
+          </span>
+        </div>
+
+        <p className="px-1 pb-3 text-center text-[11.5px] leading-relaxed text-apagado">
+          {conTasa.size === 0
+            ? 'Todavía no has cargado ninguna tasa. Elige un día y escribe el cambio.'
+            : `${conTasa.size} ${conTasa.size === 1 ? 'día tiene' : 'días tienen'} tasa propia. Los demás usan la del último día cargado.`}
         </p>
 
         {futuro && (

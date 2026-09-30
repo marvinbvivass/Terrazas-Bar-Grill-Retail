@@ -92,13 +92,22 @@ export function Calendario({
               aria-current={elegido ? 'date' : undefined}
               className={[
                 'relative flex aspect-square items-center justify-center rounded-full text-[14px]',
+                /*
+                 * Un día con dato cargado se rellena, no se marca con un punto
+                 * y ya. El punto de cuatro píxeles que había antes existía en
+                 * el código y no se veía en el teléfono, que para el caso es lo
+                 * mismo que no estar. El relleno se distingue de un vistazo y
+                 * el punto queda de refuerzo.
+                 */
                 elegido
                   ? 'bg-cobre font-bold text-white'
-                  : c.esHoy
-                    ? 'border border-cobre font-bold text-cobre2'
+                  : marcado
+                    ? 'bg-cobre/20 font-bold text-cobre2'
                     : c.delMes
                       ? 'font-medium text-tinta'
                       : 'text-apagado/60',
+                // Hoy lleva aro, y se puede combinar con el relleno de arriba.
+                c.esHoy && !elegido ? 'ring-2 ring-cobre ring-inset font-bold' : '',
                 bloqueado ? 'opacity-25' : '',
               ].join(' ')}
               style={{ minHeight: 0 }}
@@ -106,7 +115,7 @@ export function Calendario({
               {c.numero}
               {marcado && (
                 <span
-                  className={`absolute bottom-[5px] h-1 w-1 rounded-full ${
+                  className={`absolute bottom-[3px] h-1.5 w-1.5 rounded-full ${
                     elegido ? 'bg-white' : 'bg-cobre'
                   }`}
                 />
