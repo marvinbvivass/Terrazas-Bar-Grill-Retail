@@ -24,6 +24,12 @@ import {
 } from '../domain/cierreDia'
 import type { Recibido } from '../domain/cuadre'
 import {
+  construirDevolucion,
+  type Devolucion,
+  type EntradaLineaDevolucion,
+  type MotivoDevolucion,
+} from '../domain/devolucion'
+import {
   deudoresDeVacios,
   saldoCliente,
   saldoCompania,
@@ -55,8 +61,10 @@ import {
   guardarProducto as guardarProductoDb,
   cargarSnapshot,
   cierreDelDia,
+  cargarDevoluciones,
   cargarVacios,
   registrarAjuste,
+  registrarDevolucion,
   registrarRecepcion,
   registrarVacios,
   claveExistencia,
@@ -107,8 +115,33 @@ export function usePos() {
   const [dia, setDia] = useState<DiaNegocio>(hoy())
   /** El acta del día que se está mirando, si ya se cerró */
   const [cierreDia, setCierreDia] = useState<CierreDia | null>(null)
+  /** Devoluciones de cliente, para el cierre y para los saldos */
+  const [devoluciones, setDevoluciones] = useState<Devolucion[]>([])
   /** Todos los movimientos de envases retornables */
   const [vacios, setVacios] = useState<MovimientoVacios[]>([])
+
+  /**
+   * Un día cerrado no se toca.
+   *
+   * El acta ya marcaba el día como cerrado en la pantalla de cierre, pero nada
+   * impedía moverse a esa fecha y cargar un cobro, una merma o una entrada: si
+   * el dueño revisó el lunes y después alguien le agrega algo, el número que
+   * vio deja de ser el número y no queda rastro de que cambió.
+   *
+   * Se bloquea aquí, en el hook, y no en cada pantalla: esconder botones
+   * protege lo que se ve, y lo que hay que proteger es el dato.
+   */
+  const diaCerrado = cierreDia !== null
+
+  const bloqueadoPorCierre = useCallback(() => {
+    if (!cierreDia) return false
+    setAviso({
+      texto: 'Ese día ya está cerrado. Reábrelo desde Cierre para poder cambiarlo.',
+      tono: 'error',
+    })
+    return true
+  }, [cierreDia])
+
   const [carrito, setCarrito] = useState<Carrito>(carritoVacio())
   const [ventas, setVentas] = useState<Venta[]>([])
   const [abonos, setAbonos] = useState<Abono[]>([])
@@ -127,10 +160,11 @@ export function usePos() {
     void (async () => {
       await pedirAlmacenamientoPersistente()
       await prepararConfiguracion()
-      const [s, comercial, envases, cola] = await Promise.all([
+      const [s, comercial, envases, devs, cola] = await Promise.all([
         cargarSnapshot(),
         cargarMovimientoComercial(),
         cargarVacios(),
+        cargarDevoluciones(),
         pendientesDeSubir(),
       ])
       if (!vivo) return
@@ -139,6 +173,7 @@ export function usePos() {
       setAbonos(comercial.abonos)
       setClientes(comercial.clientes)
       setVacios(envases)
+      setDevoluciones(devs)
       setPendientes(cola)
     })()
     return () => {
@@ -184,10 +219,11 @@ export function usePos() {
       const empuje = await empujarCola()
       await bajarSnapshot()
 
-      const [s2, comercial, envases, cola] = await Promise.all([
+      const [s2, comercial, envases, devs, cola] = await Promise.all([
         cargarSnapshot(),
         cargarMovimientoComercial(),
         cargarVacios(),
+        cargarDevoluciones(),
         pendientesDeSubir(),
       ])
       setSnapshot(s2)
@@ -195,6 +231,7 @@ export function usePos() {
       setAbonos(comercial.abonos)
       setClientes(comercial.clientes)
       setVacios(envases)
+      setDevoluciones(devs)
       setPendientes(cola)
       setUltimaSync(Date.now())
 
@@ -516,7 +553,7 @@ export function usePos() {
    */
   const registrarMerma = useCallback(
     async (entradas: EntradaMerma[], nota?: string | null) => {
-      if (!snapshot) return null
+      if (!snapshot || bloqueadoPorCierre()) return null
       const ajuste = construirMerma(entradas, {
         dia,
         fecha: inicioDe(dia) + 12 * 3600_000,
@@ -533,7 +570,7 @@ export function usePos() {
       void sincronizar(true)
       return ajuste
     },
-    [snapshot, dia, sincronizar],
+    [snapshot, dia, sincronizar, bloqueadoPorCierre],
   )
 
   /**
@@ -546,7 +583,7 @@ export function usePos() {
    */
   const registrarConteo = useCallback(
     async (entradas: EntradaConteo[], nota?: string | null) => {
-      if (!snapshot) return null
+      if (!snapshot || bloqueadoPorCierre()) return null
       const ajuste = construirConteo(entradas, {
         dia,
         fecha: inicioDe(dia) + 12 * 3600_000,
@@ -569,7 +606,7 @@ export function usePos() {
       void sincronizar(true)
       return ajuste
     },
-    [snapshot, dia, sincronizar],
+    [snapshot, dia, sincronizar, bloqueadoPorCierre],
   )
 
   /**
@@ -596,7 +633,7 @@ export function usePos() {
       entradas: Array<{ productoId: UUID; dejados: number; devueltos: number }>,
       opciones?: { documentoId?: UUID | null; nota?: string | null },
     ) => {
-      if (!snapshot) return null
+      if (!snapshot || bloqueadoPorCierre()) return null
       const mov = vaciosDeCompania(entradas, {
         dia,
         fecha: inicioDe(dia) + 12 * 3600_000,
@@ -608,7 +645,7 @@ export function usePos() {
       })
       return registrarVaciosMov(mov, 'Vacíos de la compañía actualizados')
     },
-    [snapshot, dia, registrarVaciosMov],
+    [snapshot, dia, registrarVaciosMov, bloqueadoPorCierre],
   )
 
   const moverVaciosCliente = useCallback(
@@ -617,7 +654,7 @@ export function usePos() {
       entradas: Array<{ productoId: UUID; seLlevo: number; trajo: number }>,
       opciones?: { documentoTipo?: 'cierre' | 'manual'; documentoId?: UUID | null; nota?: string | null },
     ) => {
-      if (!snapshot) return null
+      if (!snapshot || bloqueadoPorCierre()) return null
       const mov = vaciosDeCliente(clienteId, entradas, {
         dia,
         fecha: inicioDe(dia) + 12 * 3600_000,
@@ -630,7 +667,7 @@ export function usePos() {
       const nombre = clientes.find((c) => c.id === clienteId)?.nombre ?? 'cliente'
       return registrarVaciosMov(mov, `Vacíos de ${nombre} actualizados`)
     },
-    [snapshot, dia, clientes, registrarVaciosMov],
+    [snapshot, dia, clientes, registrarVaciosMov, bloqueadoPorCierre],
   )
 
   /** Envases que el local le debe a la compañia, por producto */
@@ -648,6 +685,56 @@ export function usePos() {
   const vaciosDe = useCallback(
     (clienteId: UUID) => totalDe(saldoCliente(clienteId, vacios)),
     [vacios],
+  )
+
+  /**
+   * Devolución parcial de un cliente.
+   *
+   * En efectivo sale plata de la gaveta; a cuenta le baja la deuda y la caja no
+   * se entera. Si la mercancía vuelve al anaquel, entra con su asiento.
+   */
+  const devolver = useCallback(
+    async (entrada: {
+      lineas: EntradaLineaDevolucion[]
+      clienteId?: UUID | null
+      modo: 'efectivo' | 'cuenta'
+      motivo: MotivoDevolucion
+      vuelveAlStock: boolean
+      nota?: string | null
+    }): Promise<Devolucion | null> => {
+      if (!snapshot || bloqueadoPorCierre()) return null
+
+      const devolucion = construirDevolucion(entrada.lineas, {
+        dia,
+        fecha: inicioDe(dia) + 12 * 3600_000,
+        usuarioId: snapshot.usuarioId,
+        clienteId: entrada.clienteId ?? null,
+        modo: entrada.modo,
+        motivo: entrada.motivo,
+        vuelveAlStock: entrada.vuelveAlStock,
+        nota: entrada.nota ?? null,
+        creadaOffline: !navigator.onLine,
+      })
+      if (!devolucion) {
+        setAviso({ texto: 'A cuenta hace falta decir de qué cliente', tono: 'error' })
+        return null
+      }
+
+      await registrarDevolucion(devolucion)
+      setDevoluciones((d) => [...d, devolucion])
+      if (devolucion.vuelveAlStock) setSnapshot(await cargarSnapshot())
+      setPendientes(await pendientesDeSubir())
+      setAviso({
+        texto:
+          devolucion.modo === 'efectivo'
+            ? `Devueltos ${formato(devolucion.total, 'USD')} de la gaveta`
+            : `Descontados ${formato(devolucion.total, 'USD')} de la cuenta`,
+        tono: 'ok',
+      })
+      void sincronizar(true)
+      return devolucion
+    },
+    [snapshot, dia, sincronizar, bloqueadoPorCierre],
   )
 
   const reabrirDia = useCallback(async () => {
@@ -680,7 +767,7 @@ export function usePos() {
 
   const cobrar = useCallback(
     async (clienteId: UUID, plan: PlanAbono, pagos: Pago[], nota?: string) => {
-      if (!snapshot || plan.aplicado <= 0) return
+      if (!snapshot || plan.aplicado <= 0 || bloqueadoPorCierre()) return
       const abono = construirAbono(
         {
           clienteId,
@@ -699,7 +786,7 @@ export function usePos() {
       setAviso({ texto: `Cobro registrado en el día ${dia}`, tono: 'ok' })
       void sincronizar(true)
     },
-    [snapshot, dia, sincronizar],
+    [snapshot, dia, sincronizar, bloqueadoPorCierre],
   )
 
   // -------------------------------------------------------------------------
@@ -726,7 +813,7 @@ export function usePos() {
       documento?: string | null
       nota?: string | null
     }): Promise<Recepcion | null> => {
-      if (!snapshot) return null
+      if (!snapshot || bloqueadoPorCierre()) return null
       const utiles = entrada.lineas.filter((l) => l.cantidad > 0)
       if (utiles.length === 0) return null
 
@@ -750,7 +837,7 @@ export function usePos() {
       void sincronizar(true)
       return recepcion
     },
-    [snapshot, dia, recargarCatalogo, sincronizar],
+    [snapshot, dia, recargarCatalogo, sincronizar, bloqueadoPorCierre],
   )
 
   const guardarProducto = useCallback(
@@ -805,7 +892,7 @@ export function usePos() {
    */
   const eliminarCliente = useCallback(
     async (clienteId: UUID): Promise<boolean> => {
-      const saldo = saldoDeCliente(clienteId, ventas, abonos)
+      const saldo = saldoDeCliente(clienteId, ventas, abonos, devoluciones)
       if (saldo > 0) {
         setAviso({ texto: 'No se puede quitar: todavía debe', tono: 'error' })
         return false
@@ -849,8 +936,9 @@ export function usePos() {
         abonos,
         metodosPago: snapshot?.metodosPago ?? [],
         carteraAlCierre: carteraTotal,
+        devoluciones,
       }),
-    [dia, ventas, abonos, snapshot, carteraTotal],
+    [dia, ventas, abonos, snapshot, carteraTotal, devoluciones],
   )
 
   return {
@@ -895,6 +983,8 @@ export function usePos() {
     recibirMercancia,
     registrarMerma,
     registrarConteo,
+    devolver,
+    devoluciones,
     moverVaciosCompania,
     moverVaciosCliente,
     vacios,
@@ -904,11 +994,12 @@ export function usePos() {
     vaciosDe,
     reabrirDia,
     cierreDia,
+    diaCerrado,
     crearCliente,
     actualizarCliente,
     eliminarCliente,
     ventasAbiertasDe: (clienteId: UUID) => ventasAbiertas(clienteId, ventas, abonos, dia),
-    saldoDe: (clienteId: UUID) => saldoDeCliente(clienteId, ventas, abonos),
+    saldoDe: (clienteId: UUID) => saldoDeCliente(clienteId, ventas, abonos, devoluciones),
   }
 }
 

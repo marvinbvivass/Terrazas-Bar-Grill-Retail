@@ -22,6 +22,8 @@ import type { CierreDia } from '../domain/cierreDia'
 import type { Recepcion } from '../domain/recepcion'
 import type { AjusteInventario } from '../domain/ajuste'
 import type { MovimientoVacios } from '../domain/vacios'
+import type { Devolucion } from '../domain/devolucion'
+import { movimientosDeDevolucion } from '../domain/devolucion'
 import { movimientosDeAjuste } from '../domain/ajuste'
 import { costoPromedioTrasEntrada, entradaPorProducto, movimientosDeRecepcion } from '../domain/recepcion'
 import { idDeCierre } from '../domain/cierreDia'
@@ -57,6 +59,7 @@ export type Pendiente =
   | { id: UUID; tipo: 'recepcion'; recepcion: Recepcion; intentos: number; ultimoError: string | null; creadaEn: number }
   | { id: UUID; tipo: 'ajuste'; ajuste: AjusteInventario; intentos: number; ultimoError: string | null; creadaEn: number }
   | { id: UUID; tipo: 'vacios'; vacios: MovimientoVacios; intentos: number; ultimoError: string | null; creadaEn: number }
+  | { id: UUID; tipo: 'devolucion'; devolucion: Devolucion; intentos: number; ultimoError: string | null; creadaEn: number }
 
 /** @deprecated se mantiene el nombre viejo para no romper importaciones */
 export type VentaPendiente = Pendiente
@@ -83,6 +86,7 @@ class LicoreriaDB extends Dexie {
   recepciones!: EntityTable<Recepcion, 'id'>
   ajustes!: EntityTable<AjusteInventario, 'id'>
   vacios!: EntityTable<MovimientoVacios, 'id'>
+  devoluciones!: EntityTable<Devolucion, 'id'>
   config!: EntityTable<Config, 'clave'>
 
   constructor() {
@@ -172,6 +176,11 @@ class LicoreriaDB extends Dexie {
     // Versión 6: control de envases retornables.
     this.version(6).stores({
       vacios: 'id, contraparte, clienteId, dia, fecha',
+    })
+
+    // Versión 7: devoluciones parciales de cliente.
+    this.version(7).stores({
+      devoluciones: 'id, dia, clienteId, fecha',
     })
   }
 }
@@ -689,6 +698,50 @@ export async function registrarVacios(movimiento: MovimientoVacios): Promise<voi
       creadaEn: Date.now(),
     })
   })
+}
+
+/**
+ * Registra una devolución de cliente.
+ *
+ * Si la mercancía vuelve al anaquel, entra con su asiento. Si venía en mal
+ * estado no genera ninguno: darle entrada y sacarla luego como merma dejaría el
+ * mismo saldo con dos asientos que se contradicen a la vista.
+ */
+export async function registrarDevolucion(devolucion: Devolucion): Promise<void> {
+  const movimientos = movimientosDeDevolucion(devolucion, UBICACION_VENTA_DEFECTO)
+
+  await db.transaction(
+    'rw',
+    [db.devoluciones, db.movimientos, db.existencias, db.outbox],
+    async () => {
+      await db.devoluciones.put(devolucion)
+      if (movimientos.length) await db.movimientos.bulkPut(movimientos)
+
+      for (const m of movimientos) {
+        const id = claveExistencia(m.productoId, m.ubicacionId)
+        const actual = await db.existencias.get(id)
+        await db.existencias.put({
+          id,
+          productoId: m.productoId,
+          ubicacionId: m.ubicacionId,
+          cantidadBase: (actual?.cantidadBase ?? 0) + m.cantidadBase,
+        })
+      }
+
+      await db.outbox.put({
+        id: devolucion.id,
+        tipo: 'devolucion',
+        devolucion,
+        intentos: 0,
+        ultimoError: null,
+        creadaEn: Date.now(),
+      })
+    },
+  )
+}
+
+export async function cargarDevoluciones(): Promise<Devolucion[]> {
+  return db.devoluciones.toArray()
 }
 
 export async function cargarVacios(): Promise<MovimientoVacios[]> {

@@ -91,6 +91,16 @@ function Aplicacion({ rol }: { rol: Rol }) {
           onAtras={vista === 'inicio' ? null : alMenu}
         />
 
+        {/* Un día cerrado se puede mirar pero no cambiar. La franja lo dice en
+            todas las pantallas, no solo en la de cierre: el bloqueo vive en el
+            hook y de otro modo el encargado descubriría el motivo a base de
+            botones que no hacen nada. */}
+        {pos.diaCerrado && vista !== 'inicio' && (
+          <div className="shrink-0 border-b border-ambar/40 bg-ambar/10 px-3 py-1.5 text-center text-[12.5px] font-semibold text-ambar">
+            Día cerrado · solo lectura. Para corregir, reábrelo desde Cierre.
+          </div>
+        )}
+
         <main className="flex min-h-0 flex-1 flex-col">
           {vista === 'inicio' && <Inicio pos={pos} rol={rol} onIr={setVista} />}
           {vista === 'cierre' && <CierrePantalla pos={pos} />}

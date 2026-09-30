@@ -131,6 +131,15 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Devoluciones de cliente. No se borran: una devolución que desaparece es
+    // plata que salió de la gaveta sin que quede constancia de por qué.
+    match /devoluciones/{id} {
+      allow read:   if sesion();
+      allow create: if sesion();
+      allow update: if sesion();
+      allow delete: if false;
+    }
+
     match /movimientos/{id} {
       allow read:   if sesion();
       allow create: if sesion();

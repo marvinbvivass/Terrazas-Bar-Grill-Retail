@@ -3,6 +3,7 @@ import type { CierreDia } from '../domain/cierreDia'
 import type { Recepcion } from '../domain/recepcion'
 import type { AjusteInventario } from '../domain/ajuste'
 import type { MovimientoVacios } from '../domain/vacios'
+import type { Devolucion } from '../domain/devolucion'
 import type { Abono, Venta } from '../domain/types'
 
 /**
@@ -41,6 +42,8 @@ export interface Transporte {
   subirAjustes(ajustes: AjusteInventario[]): Promise<void>
   /** Sube los movimientos de envases. Idempotente por `movimiento.id`. */
   subirVacios(movimientos: MovimientoVacios[]): Promise<void>
+  /** Sube las devoluciones de cliente. Idempotente por `devolucion.id`. */
+  subirDevoluciones(devoluciones: Devolucion[]): Promise<void>
   /** Baja el catálogo completo. Con pocos productos son unos kilobytes. */
   bajarSnapshot(): Promise<void>
 }
@@ -77,6 +80,9 @@ export const transporteLocal: Transporte = {
   async subirVacios() {
     /* sin backend todavía */
   },
+  async subirDevoluciones() {
+    /* sin backend todavía */
+  },
   async bajarSnapshot() {
     /* sin backend todavía */
   },
@@ -106,6 +112,7 @@ export async function empujarCola(limite = 50): Promise<ResultadoEmpuje> {
   const recepciones = pendientes.filter((p) => p.tipo === 'recepcion')
   const ajustes = pendientes.filter((p) => p.tipo === 'ajuste')
   const vacios = pendientes.filter((p) => p.tipo === 'vacios')
+  const devoluciones = pendientes.filter((p) => p.tipo === 'devolucion')
 
   let aceptadas = 0
   let rechazadas = 0
@@ -181,6 +188,18 @@ export async function empujarCola(limite = 50): Promise<ResultadoEmpuje> {
         }
       })
       aceptadas += vacios.length
+    }
+
+    if (devoluciones.length) {
+      await transporte.subirDevoluciones(devoluciones.map((p) => p.devolucion))
+      await db.transaction('rw', [db.devoluciones, db.outbox], async () => {
+        for (const p of devoluciones) {
+          const guardada = await db.devoluciones.get(p.id)
+          if (guardada) await db.devoluciones.put({ ...guardada, sincronizadaEn: Date.now() })
+          await db.outbox.delete(p.id)
+        }
+      })
+      aceptadas += devoluciones.length
     }
 
     const respuestas = [

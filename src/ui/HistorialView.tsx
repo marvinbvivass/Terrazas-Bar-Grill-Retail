@@ -27,9 +27,10 @@ export function HistorialView({ pos, onVerDia }: { pos: Pos; onVerDia: () => voi
           ventas: pos.ventas,
           abonos: pos.abonos,
           metodosPago: pos.snapshot?.metodosPago ?? [],
+          devoluciones: pos.devoluciones,
         }),
       )
-  }, [pos.ventas, pos.abonos, pos.snapshot])
+  }, [pos.ventas, pos.abonos, pos.snapshot, pos.devoluciones])
 
   const total = useMemo(
     () => ({

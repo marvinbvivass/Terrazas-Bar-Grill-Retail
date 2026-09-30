@@ -1,6 +1,7 @@
 import { redondear } from './money'
 import { diaDe, diasDesde } from './dias'
 import type { Abono, AplicacionAbono, Cliente, DiaNegocio, Pago, UUID, Venta } from './types'
+import { devueltoACuentaDe, type Devolucion } from './devolucion'
 
 /**
  * Crédito a clientes de confianza.
@@ -62,8 +63,26 @@ export function ventasAbiertas(
     .sort((a, b) => a.venta.fecha - b.venta.fecha)
 }
 
-export function saldoDeCliente(clienteId: UUID, ventas: Venta[], abonos: Abono[]): number {
-  return ventasAbiertas(clienteId, ventas, abonos).reduce((s, x) => redondear(s + x.saldo, 2), 0)
+/**
+ * Lo que debe un cliente.
+ *
+ * Tres cosas lo mueven: lo que se le fio lo sube, lo que abonó lo baja, y lo
+ * que devolvió A CUENTA también lo baja. Las devoluciones en efectivo no entran
+ * aquí: esas se le pagaron, no se le descontaron de la deuda.
+ */
+export function saldoDeCliente(
+  clienteId: UUID,
+  ventas: Venta[],
+  abonos: Abono[],
+  devoluciones: Devolucion[] = [],
+): number {
+  const debe = ventasAbiertas(clienteId, ventas, abonos).reduce(
+    (s, x) => redondear(s + x.saldo, 2),
+    0,
+  )
+  // Nunca por debajo de cero: si devolvió más de lo que debía, no es que el
+  // local le deba plata, es que hay que devolvérsela en efectivo.
+  return Math.max(0, redondear(debe - devueltoACuentaDe(clienteId, devoluciones), 2))
 }
 
 export interface ResumenCliente {

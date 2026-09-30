@@ -9,6 +9,7 @@ import {
   totales,
 } from './cart'
 import { calcularCierre } from './cierre'
+import { construirDevolucion } from './devolucion'
 import { construirCierreDia } from './cierreDia'
 import {
   construirAbono,
@@ -474,6 +475,84 @@ describe('mezcla de monedas en la misma gaveta', () => {
     const ves = c.porMoneda.find((m) => m.moneda === 'VES')
     expect(usd?.monto).toBe(20)
     expect(ves?.monto).toBe(25 * TASA_VES)
+  })
+})
+
+describe('cuando un cliente devuelve parte de lo que se llevó', () => {
+  function diaCon(devoluciones: ReturnType<typeof construirDevolucion>[]) {
+    const carrito = vender(100) // 100 botellas a 1,00, costo 0,60
+    const venta = construirVentaDelDia(
+      { ...carrito, pagos: construirPagosDelCierre({ USD: 100 }, TASAS, METODOS) },
+      datos(),
+      0,
+    )
+    return calcularCierre({
+      dia: DIA,
+      ventas: [venta],
+      abonos: [],
+      metodosPago: METODOS,
+      devoluciones: devoluciones.filter((d): d is NonNullable<typeof d> => d !== null),
+    })
+  }
+
+  const devolver = (opciones: Partial<Parameters<typeof construirDevolucion>[1]> = {}) =>
+    construirDevolucion([{ producto: POLAR, presentacion: BOTELLA, cantidad: 10, precioUnitario: 1 }], {
+      dia: DIA,
+      fecha: Date.parse(`${DIA}T12:00:00Z`),
+      usuarioId: 'u',
+      modo: 'efectivo',
+      motivo: 'mal_estado',
+      vuelveAlStock: false,
+      creadaOffline: false,
+      ...opciones,
+    })
+
+  it('devolverle plata baja las dos cifras del día', () => {
+    const c = diaCon([devolver()])
+    // Se vendieron 100 y se devolvieron 10.
+    expect(c.vendidoHoy).toBe(90)
+    expect(c.entroEnCaja).toBe(90)
+    expect(c.devolucionesEfectivo).toBe(10)
+  })
+
+  it('bajarle la deuda NO toca la gaveta', () => {
+    const c = diaCon([devolver({ modo: 'cuenta', clienteId: 'c-juan' })])
+    // Vendió menos, pero el dinero de la gaveta no se movió: nunca salió.
+    expect(c.vendidoHoy).toBe(90)
+    expect(c.entroEnCaja).toBe(100)
+    expect(c.devolucionesCuenta).toBe(10)
+  })
+
+  it('si la mercancía vuelve al anaquel, su costo deja de ser costo del día', () => {
+    const c = diaCon([devolver({ vuelveAlStock: true })])
+    // 100 botellas costaron 60; vuelven 10, que costaron 6.
+    expect(c.costoVendido).toBe(54)
+    expect(c.margen).toBe(36)
+  })
+
+  it('lo que venía malo no vuelve al anaquel y su costo se queda en el día', () => {
+    const c = diaCon([devolver({ vuelveAlStock: false })])
+    // La mercancía se perdió: el negocio pagó esos 60 igual.
+    expect(c.costoVendido).toBe(60)
+    expect(c.margen).toBe(30)
+  })
+
+  it('una devolución de ayer no toca el cierre de hoy', () => {
+    const c = diaCon([devolver({ dia: AYER })])
+    expect(c.vendidoHoy).toBe(100)
+    expect(c.entroEnCaja).toBe(100)
+  })
+
+  it('a cuenta le baja la deuda al cliente en CXC', () => {
+    const credito = construirVentaCreditoSinLineas(datos(), 'c-juan', 25)
+    const dev = devolver({ modo: 'cuenta', clienteId: 'c-juan' })!
+    expect(saldoDeCliente('c-juan', [credito], [], [dev])).toBe(15)
+  })
+
+  it('en efectivo NO le baja la deuda: esa plata se le pagó', () => {
+    const credito = construirVentaCreditoSinLineas(datos(), 'c-juan', 25)
+    const dev = devolver({ modo: 'efectivo', clienteId: 'c-juan' })!
+    expect(saldoDeCliente('c-juan', [credito], [], [dev])).toBe(25)
   })
 })
 

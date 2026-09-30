@@ -18,6 +18,7 @@ import type { CierreDia } from '../domain/cierreDia'
 import type { Recepcion } from '../domain/recepcion'
 import type { AjusteInventario } from '../domain/ajuste'
 import type { MovimientoVacios } from '../domain/vacios'
+import type { Devolucion } from '../domain/devolucion'
 import type { Abono, Venta } from '../domain/types'
 import type { RespuestaSync, Transporte } from './sync'
 
@@ -364,7 +365,20 @@ export async function subirVacios(movimientos: MovimientoVacios[]): Promise<void
   await lote.commit()
 }
 
+/** Sube las devoluciones de cliente */
+export async function subirDevoluciones(devoluciones: Devolucion[]): Promise<void> {
+  if (devoluciones.length === 0) return
+  const lote = writeBatch(fsdb())
+  for (const d of devoluciones) {
+    lote.set(doc(fsdb(), 'devoluciones', d.id), limpiar({ ...d, sincronizadaEn: Date.now() }))
+  }
+  await lote.commit()
+}
+
 export const transporteFirestore: Transporte = {
+  async subirDevoluciones(devoluciones) {
+    await subirDevoluciones(devoluciones)
+  },
   async subirVacios(movimientos) {
     await subirVacios(movimientos)
   },

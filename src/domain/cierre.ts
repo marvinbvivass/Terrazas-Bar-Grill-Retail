@@ -1,5 +1,6 @@
 import { redondear } from './money'
 import type { Abono, DiaNegocio, MetodoPago, MonedaCodigo, Venta } from './types'
+import { devueltoACuenta, devueltoEnEfectivo, type Devolucion } from './devolucion'
 
 /**
  * Cierre del día.
@@ -54,6 +55,12 @@ export interface Cierre {
   margen: number
   ivaVentas: number
 
+  // --- Devoluciones ---------------------------------------------------------
+  /** Devuelto en efectivo: sale de la gaveta */
+  devolucionesEfectivo: number
+  /** Devuelto a cuenta: baja deuda, no toca la gaveta */
+  devolucionesCuenta: number
+
   // --- Conteos --------------------------------------------------------------
   numVentasContado: number
   numVentasCredito: number
@@ -71,6 +78,8 @@ export interface EntradaCierre {
   metodosPago: MetodoPago[]
   /** Saldo total de todos los clientes al terminar el día */
   carteraAlCierre?: number
+  /** Mercancía que volvió. Baja lo vendido, y si fue en efectivo, la caja. */
+  devoluciones?: Devolucion[]
 }
 
 export function calcularCierre(entrada: EntradaCierre): Cierre {
@@ -130,20 +139,46 @@ export function calcularCierre(entrada: EntradaCierre): Cierre {
     0,
   )
 
-  const vendidoHoy = redondear(contado + creditoHoy, 2)
+  /*
+   * Las devoluciones se restan al final, no se mezclan con las ventas.
+   *
+   * La que se pagó en efectivo sale de la gaveta y baja las dos cifras. La que
+   * fue a cuenta no mueve plata: baja lo vendido y le baja la deuda al cliente,
+   * pero la caja del día no se entera. Restarlas las dos de la caja haría que
+   * el cierre pidiera contar menos dinero del que hay.
+   */
+  const devoluciones = entrada.devoluciones ?? []
+  const devolucionesEfectivo = devueltoEnEfectivo(dia, devoluciones)
+  const devolucionesCuenta = devueltoACuenta(dia, devoluciones)
+
+  // El costo solo se devuelve si la mercancía volvió al anaquel. Lo que entró
+  // en mal estado se perdió igual: su costo se queda en el del día.
+  const costoDevuelto = redondear(
+    devoluciones
+      .filter((d) => d.dia === dia && d.vuelveAlStock)
+      .reduce((x, d) => x + d.costoTotal, 0),
+    2,
+  )
+
+  const vendidoHoy = redondear(
+    contado + creditoHoy - devolucionesEfectivo - devolucionesCuenta,
+    2,
+  )
 
   return {
     dia,
     contado,
     cobrosCredito,
-    entroEnCaja: redondear(contado + cobrosCredito, 2),
+    entroEnCaja: redondear(contado + cobrosCredito - devolucionesEfectivo, 2),
     igtf,
     porMetodo,
     porMoneda: [...porMonedaMapa.entries()].map(([moneda, monto]) => ({ moneda, monto })),
     creditoHoy,
     vendidoHoy,
-    costoVendido,
-    margen: redondear(vendidoHoy - costoVendido, 2),
+    costoVendido: redondear(costoVendido - costoDevuelto, 2),
+    margen: redondear(vendidoHoy - (costoVendido - costoDevuelto), 2),
+    devolucionesEfectivo,
+    devolucionesCuenta,
     ivaVentas,
     numVentasContado: contadoDelDia.length,
     numVentasCredito: creditoDelDia.length,
