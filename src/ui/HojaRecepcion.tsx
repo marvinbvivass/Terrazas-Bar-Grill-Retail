@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { formato, parsearMonto } from '../domain/money'
 import type { EntradaLineaRecepcion } from '../domain/recepcion'
+import { productosConEnvase } from '../domain/vacios'
 import type { Presentacion, Producto, UUID } from '../domain/types'
 import { UBICACION_VENTA_DEFECTO } from '../data/seed'
 import type { Pos } from '../hooks/usePos'
@@ -33,6 +34,8 @@ export function HojaRecepcion({ pos, onCerrar }: { pos: Pos; onCerrar: () => voi
   const [proveedor, setProveedor] = useState('')
   const [documento, setDocumento] = useState('')
   const [renglones, setRenglones] = useState<Renglon[]>([])
+  /** Envases: lo que el camion dejo debiendo y lo que se llevo del patio */
+  const [envases, setEnvases] = useState<Record<string, { dejados: string; devueltos: string }>>({})
   const [guardando, setGuardando] = useState(false)
 
   const productos = useMemo(
@@ -66,6 +69,18 @@ export function HojaRecepcion({ pos, onCerrar }: { pos: Pos; onCerrar: () => voi
   )
   const sinCosto = preparados.some((p) => p.entrada.costoPorPresentacion <= 0)
 
+  const conEnvase = useMemo(() => productosConEnvase(s?.productos ?? []), [s])
+
+  const movimientoEnvases = useMemo(
+    () =>
+      conEnvase.map((p) => ({
+        productoId: p.id,
+        dejados: Math.max(0, Math.floor(parsearMonto(envases[p.id]?.dejados ?? ''))),
+        devueltos: Math.max(0, Math.floor(parsearMonto(envases[p.id]?.devueltos ?? ''))),
+      })),
+    [conEnvase, envases],
+  )
+
   if (!s) return null
   const snap = s
 
@@ -97,11 +112,26 @@ export function HojaRecepcion({ pos, onCerrar }: { pos: Pos; onCerrar: () => voi
 
   async function guardar() {
     setGuardando(true)
-    await pos.recibirMercancia({
+    const recepcion = await pos.recibirMercancia({
       lineas: preparados.map((p) => p.entrada),
       proveedor,
       documento,
     })
+
+    /*
+     * Los envases van en su propio documento, atado a la recepcion.
+     *
+     * No se meten dentro de la recepcion porque no son mercancia: la recepcion
+     * mueve stock y costo promedio, y un vacio no es ninguna de las dos cosas.
+     * Van despues para que la entrada quede registrada aunque esto falle.
+     */
+    if (movimientoEnvases.some((e) => e.dejados !== e.devueltos)) {
+      await pos.moverVaciosCompania(movimientoEnvases, {
+        documentoId: recepcion?.id ?? null,
+        nota: proveedor.trim() || null,
+      })
+    }
+
     setGuardando(false)
     onCerrar()
   }
@@ -231,6 +261,64 @@ export function HojaRecepcion({ pos, onCerrar }: { pos: Pos; onCerrar: () => voi
           Hay renglones sin costo. Puedes guardarlos igual y el stock sube, pero el costo promedio
           de ese producto bajará, y con él el margen que vas a ver en el cierre.
         </p>
+      )}
+
+      {conEnvase.length > 0 && (
+        <div className="mt-4 rounded-xl border border-linea bg-panel2 px-3 py-3">
+          <p className="pb-0.5 font-mono text-[10px] tracking-[0.14em] text-apagado uppercase">
+            Vacios de este despacho
+          </p>
+          <p className="pb-2.5 text-[12.5px] leading-relaxed text-tinta2">
+            <b>Dejo</b> son los envases que vinieron llenos y vas a tener que devolver.
+            <b> Se llevo</b> son los vacios que el camion saco del patio.
+          </p>
+
+          <div className="flex gap-2 px-1 pb-1">
+            <span className="flex-1" />
+            <span className="w-[72px] text-center font-mono text-[9.5px] tracking-[0.1em] text-apagado uppercase">
+              Dejo
+            </span>
+            <span className="w-[72px] text-center font-mono text-[9.5px] tracking-[0.1em] text-apagado uppercase">
+              Se llevo
+            </span>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            {conEnvase.map((p) => (
+              <div key={p.id} className="flex items-center gap-2">
+                <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium">
+                  {p.nombreCorto}
+                </span>
+                <input
+                  value={envases[p.id]?.dejados ?? ''}
+                  onChange={(e) =>
+                    setEnvases((x) => ({
+                      ...x,
+                      [p.id]: { devueltos: x[p.id]?.devueltos ?? '', dejados: e.target.value },
+                    }))
+                  }
+                  inputMode="numeric"
+                  placeholder="0"
+                  className="tabular h-10 w-[72px] rounded-lg border border-linea bg-panel text-center font-bold"
+                  aria-label={`Envases que dejo de ${p.nombreCorto}`}
+                />
+                <input
+                  value={envases[p.id]?.devueltos ?? ''}
+                  onChange={(e) =>
+                    setEnvases((x) => ({
+                      ...x,
+                      [p.id]: { dejados: x[p.id]?.dejados ?? '', devueltos: e.target.value },
+                    }))
+                  }
+                  inputMode="numeric"
+                  placeholder="0"
+                  className="tabular h-10 w-[72px] rounded-lg border border-linea bg-panel text-center font-bold"
+                  aria-label={`Envases que se llevo de ${p.nombreCorto}`}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       <div className="pt-3">

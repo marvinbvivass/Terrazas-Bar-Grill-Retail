@@ -2,6 +2,7 @@ import { db, type Pendiente } from './db'
 import type { CierreDia } from '../domain/cierreDia'
 import type { Recepcion } from '../domain/recepcion'
 import type { AjusteInventario } from '../domain/ajuste'
+import type { MovimientoVacios } from '../domain/vacios'
 import type { Abono, Venta } from '../domain/types'
 
 /**
@@ -38,6 +39,8 @@ export interface Transporte {
   subirRecepciones(recepciones: Recepcion[]): Promise<void>
   /** Sube mermas y conteos. Idempotente por `ajuste.id`. */
   subirAjustes(ajustes: AjusteInventario[]): Promise<void>
+  /** Sube los movimientos de envases. Idempotente por `movimiento.id`. */
+  subirVacios(movimientos: MovimientoVacios[]): Promise<void>
   /** Baja el catálogo completo. Con pocos productos son unos kilobytes. */
   bajarSnapshot(): Promise<void>
 }
@@ -71,6 +74,9 @@ export const transporteLocal: Transporte = {
   async subirAjustes() {
     /* sin backend todavía */
   },
+  async subirVacios() {
+    /* sin backend todavía */
+  },
   async bajarSnapshot() {
     /* sin backend todavía */
   },
@@ -99,6 +105,7 @@ export async function empujarCola(limite = 50): Promise<ResultadoEmpuje> {
   const cierres = pendientes.filter((p) => p.tipo === 'cierre')
   const recepciones = pendientes.filter((p) => p.tipo === 'recepcion')
   const ajustes = pendientes.filter((p) => p.tipo === 'ajuste')
+  const vacios = pendientes.filter((p) => p.tipo === 'vacios')
 
   let aceptadas = 0
   let rechazadas = 0
@@ -162,6 +169,18 @@ export async function empujarCola(limite = 50): Promise<ResultadoEmpuje> {
         }
       })
       aceptadas += ajustes.length
+    }
+
+    if (vacios.length) {
+      await transporte.subirVacios(vacios.map((p) => p.vacios))
+      await db.transaction('rw', [db.vacios, db.outbox], async () => {
+        for (const p of vacios) {
+          const guardado = await db.vacios.get(p.id)
+          if (guardado) await db.vacios.put({ ...guardado, sincronizadoEn: Date.now() })
+          await db.outbox.delete(p.id)
+        }
+      })
+      aceptadas += vacios.length
     }
 
     const respuestas = [

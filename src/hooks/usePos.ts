@@ -24,6 +24,15 @@ import {
 } from '../domain/cierreDia'
 import type { Recibido } from '../domain/cuadre'
 import {
+  deudoresDeVacios,
+  saldoCliente,
+  saldoCompania,
+  totalDe,
+  vaciosDeCliente,
+  vaciosDeCompania,
+  type MovimientoVacios,
+} from '../domain/vacios'
+import {
   construirConteo,
   construirMerma,
   type EntradaConteo,
@@ -46,8 +55,10 @@ import {
   guardarProducto as guardarProductoDb,
   cargarSnapshot,
   cierreDelDia,
+  cargarVacios,
   registrarAjuste,
   registrarRecepcion,
+  registrarVacios,
   claveExistencia,
   guardarCierreDia,
   reabrirCierre,
@@ -96,6 +107,8 @@ export function usePos() {
   const [dia, setDia] = useState<DiaNegocio>(hoy())
   /** El acta del día que se está mirando, si ya se cerró */
   const [cierreDia, setCierreDia] = useState<CierreDia | null>(null)
+  /** Todos los movimientos de envases retornables */
+  const [vacios, setVacios] = useState<MovimientoVacios[]>([])
   const [carrito, setCarrito] = useState<Carrito>(carritoVacio())
   const [ventas, setVentas] = useState<Venta[]>([])
   const [abonos, setAbonos] = useState<Abono[]>([])
@@ -114,9 +127,10 @@ export function usePos() {
     void (async () => {
       await pedirAlmacenamientoPersistente()
       await prepararConfiguracion()
-      const [s, comercial, cola] = await Promise.all([
+      const [s, comercial, envases, cola] = await Promise.all([
         cargarSnapshot(),
         cargarMovimientoComercial(),
+        cargarVacios(),
         pendientesDeSubir(),
       ])
       if (!vivo) return
@@ -124,6 +138,7 @@ export function usePos() {
       setVentas(comercial.ventas)
       setAbonos(comercial.abonos)
       setClientes(comercial.clientes)
+      setVacios(envases)
       setPendientes(cola)
     })()
     return () => {
@@ -169,15 +184,17 @@ export function usePos() {
       const empuje = await empujarCola()
       await bajarSnapshot()
 
-      const [s2, comercial, cola] = await Promise.all([
+      const [s2, comercial, envases, cola] = await Promise.all([
         cargarSnapshot(),
         cargarMovimientoComercial(),
+        cargarVacios(),
         pendientesDeSubir(),
       ])
       setSnapshot(s2)
       setVentas(comercial.ventas)
       setAbonos(comercial.abonos)
       setClientes(comercial.clientes)
+      setVacios(envases)
       setPendientes(cola)
       setUltimaSync(Date.now())
 
@@ -555,6 +572,84 @@ export function usePos() {
     [snapshot, dia, sincronizar],
   )
 
+  /**
+   * Movimiento de envases con la compañia o con un cliente.
+   *
+   * Devuelve null cuando no habia nada que mover: el que llega con seis vacios
+   * y se lleva seis llenas no genera documento, porque su deuda no cambio.
+   */
+  const registrarVaciosMov = useCallback(
+    async (movimiento: MovimientoVacios | null, aviso: string) => {
+      if (!movimiento) return null
+      await registrarVacios(movimiento)
+      setVacios((v) => [...v, movimiento])
+      setPendientes(await pendientesDeSubir())
+      setAviso({ texto: aviso, tono: 'ok' })
+      void sincronizar(true)
+      return movimiento
+    },
+    [sincronizar],
+  )
+
+  const moverVaciosCompania = useCallback(
+    async (
+      entradas: Array<{ productoId: UUID; dejados: number; devueltos: number }>,
+      opciones?: { documentoId?: UUID | null; nota?: string | null },
+    ) => {
+      if (!snapshot) return null
+      const mov = vaciosDeCompania(entradas, {
+        dia,
+        fecha: inicioDe(dia) + 12 * 3600_000,
+        usuarioId: snapshot.usuarioId,
+        documentoTipo: opciones?.documentoId ? 'recepcion' : 'manual',
+        documentoId: opciones?.documentoId ?? null,
+        nota: opciones?.nota ?? null,
+        creadoOffline: !navigator.onLine,
+      })
+      return registrarVaciosMov(mov, 'Vacíos de la compañía actualizados')
+    },
+    [snapshot, dia, registrarVaciosMov],
+  )
+
+  const moverVaciosCliente = useCallback(
+    async (
+      clienteId: UUID,
+      entradas: Array<{ productoId: UUID; seLlevo: number; trajo: number }>,
+      opciones?: { documentoTipo?: 'cierre' | 'manual'; documentoId?: UUID | null; nota?: string | null },
+    ) => {
+      if (!snapshot) return null
+      const mov = vaciosDeCliente(clienteId, entradas, {
+        dia,
+        fecha: inicioDe(dia) + 12 * 3600_000,
+        usuarioId: snapshot.usuarioId,
+        documentoTipo: opciones?.documentoTipo ?? 'manual',
+        documentoId: opciones?.documentoId ?? null,
+        nota: opciones?.nota ?? null,
+        creadoOffline: !navigator.onLine,
+      })
+      const nombre = clientes.find((c) => c.id === clienteId)?.nombre ?? 'cliente'
+      return registrarVaciosMov(mov, `Vacíos de ${nombre} actualizados`)
+    },
+    [snapshot, dia, clientes, registrarVaciosMov],
+  )
+
+  /** Envases que el local le debe a la compañia, por producto */
+  const vaciosCompania = useMemo(() => saldoCompania(vacios), [vacios])
+  /** Clientes que deben envases, de mayor a menor */
+  const vaciosDeudores = useMemo(() => deudoresDeVacios(vacios), [vacios])
+  /** Todo lo pendiente de envases, para la insignia del menú */
+  const vaciosPendientes = useMemo(
+    () =>
+      Math.max(0, totalDe(vaciosCompania)) +
+      vaciosDeudores.reduce((x, d) => x + Math.max(0, d.total), 0),
+    [vaciosCompania, vaciosDeudores],
+  )
+
+  const vaciosDe = useCallback(
+    (clienteId: UUID) => totalDe(saldoCliente(clienteId, vacios)),
+    [vacios],
+  )
+
   const reabrirDia = useCallback(async () => {
     await reabrirCierre(dia)
     // Reabrir anula las ventas de ese cierre y devuelve la mercancía, así que
@@ -800,6 +895,13 @@ export function usePos() {
     recibirMercancia,
     registrarMerma,
     registrarConteo,
+    moverVaciosCompania,
+    moverVaciosCliente,
+    vacios,
+    vaciosCompania,
+    vaciosDeudores,
+    vaciosPendientes,
+    vaciosDe,
     reabrirDia,
     cierreDia,
     crearCliente,

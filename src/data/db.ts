@@ -21,6 +21,7 @@ import type {
 import type { CierreDia } from '../domain/cierreDia'
 import type { Recepcion } from '../domain/recepcion'
 import type { AjusteInventario } from '../domain/ajuste'
+import type { MovimientoVacios } from '../domain/vacios'
 import { movimientosDeAjuste } from '../domain/ajuste'
 import { costoPromedioTrasEntrada, entradaPorProducto, movimientosDeRecepcion } from '../domain/recepcion'
 import { idDeCierre } from '../domain/cierreDia'
@@ -55,6 +56,7 @@ export type Pendiente =
   | { id: string; tipo: 'cierre'; cierre: CierreDia; intentos: number; ultimoError: string | null; creadaEn: number }
   | { id: UUID; tipo: 'recepcion'; recepcion: Recepcion; intentos: number; ultimoError: string | null; creadaEn: number }
   | { id: UUID; tipo: 'ajuste'; ajuste: AjusteInventario; intentos: number; ultimoError: string | null; creadaEn: number }
+  | { id: UUID; tipo: 'vacios'; vacios: MovimientoVacios; intentos: number; ultimoError: string | null; creadaEn: number }
 
 /** @deprecated se mantiene el nombre viejo para no romper importaciones */
 export type VentaPendiente = Pendiente
@@ -80,6 +82,7 @@ class LicoreriaDB extends Dexie {
   cierres!: EntityTable<CierreDia, 'id'>
   recepciones!: EntityTable<Recepcion, 'id'>
   ajustes!: EntityTable<AjusteInventario, 'id'>
+  vacios!: EntityTable<MovimientoVacios, 'id'>
   config!: EntityTable<Config, 'clave'>
 
   constructor() {
@@ -164,6 +167,11 @@ class LicoreriaDB extends Dexie {
     // Versión 5: mermas y conteos físicos.
     this.version(5).stores({
       ajustes: 'id, tipo, dia, fecha',
+    })
+
+    // Versión 6: control de envases retornables.
+    this.version(6).stores({
+      vacios: 'id, contraparte, clienteId, dia, fecha',
     })
   }
 }
@@ -660,6 +668,31 @@ export async function registrarAjuste(ajuste: AjusteInventario): Promise<void> {
       creadaEn: Date.now(),
     })
   })
+}
+
+/**
+ * Guarda un movimiento de envases.
+ *
+ * No toca existencias: un vacío no es mercancía vendible, es un envase que va y
+ * viene. Mezclarlo con el stock haría que el sistema creyera tener cerveza
+ * donde solo hay botellas sucias.
+ */
+export async function registrarVacios(movimiento: MovimientoVacios): Promise<void> {
+  await db.transaction('rw', [db.vacios, db.outbox], async () => {
+    await db.vacios.put(movimiento)
+    await db.outbox.put({
+      id: movimiento.id,
+      tipo: 'vacios',
+      vacios: movimiento,
+      intentos: 0,
+      ultimoError: null,
+      creadaEn: Date.now(),
+    })
+  })
+}
+
+export async function cargarVacios(): Promise<MovimientoVacios[]> {
+  return db.vacios.toArray()
 }
 
 export async function cargarAjustes(limite = 50): Promise<AjusteInventario[]> {

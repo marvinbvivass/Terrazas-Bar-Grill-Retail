@@ -17,6 +17,7 @@ import { configuracionInicial } from './seed'
 import type { CierreDia } from '../domain/cierreDia'
 import type { Recepcion } from '../domain/recepcion'
 import type { AjusteInventario } from '../domain/ajuste'
+import type { MovimientoVacios } from '../domain/vacios'
 import type { Abono, Venta } from '../domain/types'
 import type { RespuestaSync, Transporte } from './sync'
 
@@ -353,7 +354,20 @@ export async function subirAjustes(ajustes: AjusteInventario[]): Promise<void> {
   await lote.commit()
 }
 
+/** Sube los movimientos de envases retornables */
+export async function subirVacios(movimientos: MovimientoVacios[]): Promise<void> {
+  if (movimientos.length === 0) return
+  const lote = writeBatch(fsdb())
+  for (const m of movimientos) {
+    lote.set(doc(fsdb(), 'vacios', m.id), limpiar({ ...m, sincronizadoEn: Date.now() }))
+  }
+  await lote.commit()
+}
+
 export const transporteFirestore: Transporte = {
+  async subirVacios(movimientos) {
+    await subirVacios(movimientos)
+  },
   async subirAjustes(ajustes) {
     await subirAjustes(ajustes)
   },

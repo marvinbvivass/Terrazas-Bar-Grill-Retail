@@ -10,6 +10,7 @@ export type Vista =
   | 'catalogo'
   | 'tasas'
   | 'cierre'
+  | 'vacios'
   | 'historial'
 
 /**
@@ -87,6 +88,11 @@ export function Inicio({
 
           <Boton onClick={() => onIr('tasas')} color="bg-sky-600 hover:bg-sky-700">
             Tasas del día
+          </Boton>
+
+          <Boton onClick={() => onIr('vacios')} color="bg-slate-600 hover:bg-slate-700">
+            Vacíos
+            {pos.vaciosPendientes > 0 && <Insignia>{pos.vaciosPendientes}</Insignia>}
           </Boton>
 
           {rol === 'administrador' && (

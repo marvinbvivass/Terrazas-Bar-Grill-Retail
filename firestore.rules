@@ -121,6 +121,16 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Envases retornables. Se puede corregir un movimiento, pero no borrarlo:
+    // un vacío que desaparece del historial es una deuda que se esfuma sin que
+    // nadie la haya pagado.
+    match /vacios/{id} {
+      allow read:   if sesion();
+      allow create: if sesion();
+      allow update: if sesion();
+      allow delete: if false;
+    }
+
     match /movimientos/{id} {
       allow read:   if sesion();
       allow create: if sesion();

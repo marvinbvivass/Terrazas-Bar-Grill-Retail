@@ -8,6 +8,7 @@ import { CierrePantalla } from './ui/CierrePantalla'
 import { ClientesCrudView } from './ui/ClientesCrudView'
 import { ClientesView } from './ui/ClientesView'
 import { InventarioView } from './ui/InventarioView'
+import { VaciosView } from './ui/VaciosView'
 import { HistorialView } from './ui/HistorialView'
 import { CatalogoView } from './ui/CatalogoView'
 import { TasasSheet } from './ui/TasasSheet'
@@ -40,6 +41,7 @@ const TITULOS: Record<Vista, string> = {
   catalogo: 'Catálogo',
   tasas: 'Tasas del día',
   cierre: 'Cierre del día',
+  vacios: 'Vacíos',
   historial: 'Historial',
 }
 
@@ -95,6 +97,7 @@ function Aplicacion({ rol }: { rol: Rol }) {
           {vista === 'clientes' && <ClientesCrudView pos={pos} />}
           {vista === 'cxc' && <ClientesView pos={pos} />}
           {vista === 'inventario' && <InventarioView pos={pos} />}
+          {vista === 'vacios' && <VaciosView pos={pos} />}
           {vista === 'catalogo' && <CatalogoView pos={pos} />}
           {vista === 'historial' &&
             (puedeVerHistorial ? (

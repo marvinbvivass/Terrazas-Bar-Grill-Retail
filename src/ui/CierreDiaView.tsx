@@ -15,6 +15,7 @@ import { UBICACION_VENTA_DEFECTO } from '../data/seed'
 import type { Pos } from '../hooks/usePos'
 import { Precio } from './moneda'
 import { ActaCierre } from './ActaCierre'
+import { productosConEnvase } from '../domain/vacios'
 
 const MONEDAS_COBRO: MonedaCodigo[] = ['USD', 'VES', 'COP']
 
@@ -44,6 +45,8 @@ export function CierreDiaView({ pos }: { pos: Pos }) {
   const [bruto, setBruto] = useState<Carrito>(carritoVacio())
   const [creditos, setCreditos] = useState<Array<{ clienteId: UUID; monto: string }>>([])
   const [montos, setMontos] = useState<Record<string, string>>({})
+  /** Envases que se llevaron o devolvieron los clientes hoy */
+  const [envases, setEnvases] = useState<RenglonEnvase[]>([])
   const [guardando, setGuardando] = useState(false)
 
   const momento = useMemo(() => inicioDe(pos.dia) + 12 * 3600_000, [pos.dia])
@@ -185,7 +188,26 @@ export function CierreDiaView({ pos }: { pos: Pos }) {
 
   async function cerrar() {
     setGuardando(true)
-    await pos.cerrarDia({ carrito, recibido, creditos: creditosLimpios })
+    const acta = await pos.cerrarDia({ carrito, recibido, creditos: creditosLimpios })
+
+    /*
+     * Los envases van despues del acta y en documentos propios, uno por
+     * cliente. No entran en el cuadre: un vacio no es plata, es un envase que
+     * debe volver. Meterlos en la cuenta del dia haria que la gaveta pidiera
+     * dinero por botellas que nadie compro.
+     */
+    for (const e of envases) {
+      if (!e.clienteId) continue
+      const seLlevo = Math.max(0, Math.floor(parsearMonto(e.seLlevo)))
+      const trajo = Math.max(0, Math.floor(parsearMonto(e.trajo)))
+      if (seLlevo === trajo) continue
+      await pos.moverVaciosCliente(
+        e.clienteId,
+        [{ productoId: e.productoId, seLlevo, trajo }],
+        { documentoTipo: 'cierre', documentoId: acta?.id ?? null },
+      )
+    }
+
     setGuardando(false)
   }
 
@@ -250,6 +272,8 @@ export function CierreDiaView({ pos }: { pos: Pos }) {
           onCambio={setCreditos}
           total={totalCredito}
           vendido={t.total}
+          envases={envases}
+          onEnvases={setEnvases}
         />
       )}
 
@@ -325,19 +349,32 @@ function Pasos({ paso, onPaso }: { paso: Paso; onPaso: (p: Paso) => void }) {
   )
 }
 
+export interface RenglonEnvase {
+  key: string
+  clienteId: UUID
+  productoId: UUID
+  seLlevo: string
+  trajo: string
+}
+
 function PasoCredito({
   pos,
   creditos,
   onCambio,
   total,
   vendido,
+  envases,
+  onEnvases,
 }: {
   pos: Pos
   creditos: Array<{ clienteId: UUID; monto: string }>
   onCambio: (c: Array<{ clienteId: UUID; monto: string }>) => void
   total: number
   vendido: number
+  envases: RenglonEnvase[]
+  onEnvases: (e: RenglonEnvase[]) => void
 }) {
+  const conEnvase = productosConEnvase(pos.snapshot?.productos ?? [])
   return (
     <div className="scroll-y min-h-0 flex-1 px-3 py-3">
       <p className="pb-3 text-[13.5px] leading-relaxed text-tinta2">
@@ -408,6 +445,115 @@ function PasoCredito({
           Estás fiando {formato(total, 'USD')} pero solo cargaste {formato(vendido, 'USD')} de
           venta. Revisa el paso 1: falta mercancía por cargar.
         </p>
+      )}
+
+      {conEnvase.length > 0 && pos.clientes.length > 0 && (
+        <div className="mt-4 border-t border-linea pt-3">
+          <p className="pb-0.5 font-mono text-[10px] tracking-[0.14em] text-apagado uppercase">
+            Vacíos
+          </p>
+          <p className="pb-2.5 text-[12.5px] leading-relaxed text-tinta2">
+            ¿Alguien se llevó botellas para su casa? Apunta los envases aquí. Esto no entra en el
+            cuadre: un vacío no es plata, es un envase que tiene que volver.
+          </p>
+
+          <div className="flex flex-col gap-2">
+            {envases.map((e, i) => (
+              <div key={e.key} className="rounded-xl border border-linea bg-panel px-2.5 py-2">
+                <div className="flex gap-2 pb-2">
+                  <select
+                    value={e.clienteId}
+                    onChange={(ev) => {
+                      const copia = [...envases]
+                      copia[i] = { ...e, clienteId: ev.target.value }
+                      onEnvases(copia)
+                    }}
+                    className="min-w-0 flex-1 rounded-lg border border-linea bg-panel2 px-2 py-2.5 text-[14px]"
+                    aria-label="Cliente"
+                  >
+                    <option value="">Elegir cliente…</option>
+                    {pos.clientes.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.nombre}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => onEnvases(envases.filter((_, j) => j !== i))}
+                    className="w-10 shrink-0 rounded-lg border border-linea text-[18px] text-alerta"
+                    aria-label="Quitar"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                <div className="flex gap-2">
+                  {conEnvase.length > 1 && (
+                    <select
+                      value={e.productoId}
+                      onChange={(ev) => {
+                        const copia = [...envases]
+                        copia[i] = { ...e, productoId: ev.target.value }
+                        onEnvases(copia)
+                      }}
+                      className="min-w-0 flex-1 rounded-lg border border-linea bg-panel2 px-2 py-2.5 text-[13.5px]"
+                      aria-label="Producto"
+                    >
+                      {conEnvase.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.nombreCorto}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {conEnvase.length <= 1 && <span className="min-w-0 flex-1" />}
+                  <input
+                    value={e.seLlevo}
+                    onChange={(ev) => {
+                      const copia = [...envases]
+                      copia[i] = { ...e, seLlevo: ev.target.value }
+                      onEnvases(copia)
+                    }}
+                    inputMode="numeric"
+                    placeholder="se llevó"
+                    className="tabular w-[84px] rounded-lg border border-linea bg-panel2 py-2.5 text-center font-bold placeholder:text-[11px] placeholder:font-normal"
+                    aria-label="Envases que se llevó"
+                  />
+                  <input
+                    value={e.trajo}
+                    onChange={(ev) => {
+                      const copia = [...envases]
+                      copia[i] = { ...e, trajo: ev.target.value }
+                      onEnvases(copia)
+                    }}
+                    inputMode="numeric"
+                    placeholder="trajo"
+                    className="tabular w-[84px] rounded-lg border border-linea bg-panel2 py-2.5 text-center font-bold placeholder:text-[11px] placeholder:font-normal"
+                    aria-label="Envases que trajo"
+                  />
+                </div>
+              </div>
+            ))}
+
+            <button
+              onClick={() =>
+                onEnvases([
+                  ...envases,
+                  {
+                    key: crypto.randomUUID(),
+                    clienteId: '',
+                    productoId: conEnvase[0]?.id ?? '',
+                    seLlevo: '',
+                    trajo: '',
+                  },
+                ])
+              }
+              className="rounded-xl border border-dashed border-linea2 py-2.5 text-[14px] font-semibold text-tinta2"
+            >
+              + Anotar vacíos de un cliente
+            </button>
+          </div>
+        </div>
       )}
     </div>
   )
