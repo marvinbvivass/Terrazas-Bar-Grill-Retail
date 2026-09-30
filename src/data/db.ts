@@ -805,6 +805,30 @@ export async function reabrirCierre(dia: DiaNegocio): Promise<void> {
   )
   for (const id of aAnular) await anularVenta(id)
 
+  /*
+   * Los envases que anotó ese cierre también hay que deshacerlos.
+   *
+   * Sin esto, reabrir y volver a cerrar sumaba dos veces los mismos vacíos: el
+   * cliente aparecía debiendo el doble de cajas que se llevó.
+   *
+   * Se deshacen con un movimiento contrario y no borrando el original, igual
+   * que se anula una venta. Un vacío que desaparece del historial es una deuda
+   * que se esfuma sin que nadie la haya pagado, y además el documento ya puede
+   * estar arriba, donde las reglas no dejan borrar.
+   */
+  const delCierre = (await db.vacios.toArray()).filter(
+    (m) => m.documentoTipo === 'cierre' && m.documentoId === actual.id && !m.nota?.includes('reapertura'),
+  )
+  for (const m of delCierre) {
+    await registrarVacios({
+      ...m,
+      id: crypto.randomUUID(),
+      lineas: m.lineas.map((l) => ({ ...l, cantidad: -l.cantidad })),
+      nota: `Contrapartida por reapertura del ${actual.dia}`,
+      sincronizadoEn: null,
+    })
+  }
+
   await guardarCierreDia({ ...actual, reabiertoEn: Date.now() })
 }
 

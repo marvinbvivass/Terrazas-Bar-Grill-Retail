@@ -28,7 +28,19 @@ export function CierrePantalla({ pos }: { pos: Pos }) {
         </Mitad>
       </div>
 
-      {parte === 'cargar' ? <CierreDiaView pos={pos} /> : <CierreView pos={pos} />}
+      {/*
+        La `key` es el día a propósito, y no es un detalle de rendimiento.
+        `CierreDiaView` guarda en su estado las cantidades tecleadas, los
+        créditos y los envases. Sin esto, cargar el lunes y moverse al martes
+        dejaba el carrito del lunes intacto en pantalla, y cerrar el martes
+        registraba la venta del lunes en la fecha equivocada. Cambiar la key
+        obliga a React a montar la pantalla de cero.
+      */}
+      {parte === 'cargar' ? (
+        <CierreDiaView key={pos.dia} pos={pos} />
+      ) : (
+        <CierreView pos={pos} />
+      )}
     </div>
   )
 }

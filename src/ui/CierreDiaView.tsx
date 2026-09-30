@@ -90,6 +90,18 @@ export function CierreDiaView({ pos }: { pos: Pos }) {
     return m
   }, [carrito])
 
+  /** Productos de los que se está cargando más de lo que dice el sistema */
+  const sinExistencia = useMemo(() => {
+    if (!s) return []
+    const porProducto = new Map<UUID, number>()
+    for (const l of carrito.lineas) {
+      porProducto.set(l.productoId, (porProducto.get(l.productoId) ?? 0) + l.cantidadBase)
+    }
+    return s.productos.filter(
+      (p) => (porProducto.get(p.id) ?? 0) > pos.stockDe(p.id, UBICACION_VENTA_DEFECTO),
+    )
+  }, [carrito, s, pos])
+
   const creditosLimpios = useMemo(
     () =>
       creditos
@@ -213,6 +225,16 @@ export function CierreDiaView({ pos }: { pos: Pos }) {
 
   const nadaCargado = carrito.lineas.length === 0 && totalCredito === 0
 
+  /*
+   * No se puede fiar más de lo que se vendió.
+   *
+   * La venta del día guarda como total lo COBRADO, o sea lo vendido menos lo
+   * fiado. Si el fiado fuera mayor, ese total quedaría en negativo y el cierre
+   * diría que de la gaveta salió dinero en un día de ventas. Antes solo había
+   * un aviso y el botón seguía activo.
+   */
+  const fiadoImposible = totalCredito > t.total
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <Pasos paso={paso} onPaso={setPaso} />
@@ -289,6 +311,15 @@ export function CierreDiaView({ pos }: { pos: Pos }) {
 
       {/* Pie fijo: la cuenta del día, siempre a la vista */}
       <div className="shrink-0 border-t border-linea bg-panel px-3 py-2.5">
+        {sinExistencia.length > 0 && (
+          <p className="pb-2 text-[12px] leading-relaxed text-ambar">
+            Estás cargando más de lo que hay en el sistema de{' '}
+            {sinExistencia.map((p) => p.nombreCorto).join(', ')}. Se puede cerrar igual —el stock
+            quedará en negativo—, pero suele significar que falta registrar una entrada de
+            mercancía.
+          </p>
+        )}
+
         <div className="flex items-end justify-between gap-2 pb-2">
           <Cifra etiqueta="Vendido" valor={formato(t.total, 'USD')} grande />
           {totalCredito > 0 && (
@@ -307,7 +338,7 @@ export function CierreDiaView({ pos }: { pos: Pos }) {
         ) : (
           <button
             onClick={() => void cerrar()}
-            disabled={guardando || nadaCargado}
+            disabled={guardando || nadaCargado || fiadoImposible}
             className={`w-full rounded-xl py-3.5 text-[16px] font-bold disabled:opacity-40 ${
               c.cuadra ? 'bg-verde text-white' : 'bg-amber-600 text-white'
             }`}
@@ -316,7 +347,9 @@ export function CierreDiaView({ pos }: { pos: Pos }) {
               ? 'Guardando…'
               : nadaCargado
                 ? 'No hay nada que cerrar'
-                : c.cuadra
+                : fiadoImposible
+                  ? 'El fiado supera lo vendido'
+                  : c.cuadra
                   ? 'Cerrar el día'
                   : `Cerrar con ${c.diferencia < 0 ? 'faltante' : 'sobrante'} de ${formato(Math.abs(c.diferencia), 'USD')}`}
           </button>

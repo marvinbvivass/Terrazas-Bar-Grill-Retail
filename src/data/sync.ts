@@ -257,10 +257,24 @@ export async function empujarCola(limite = 50): Promise<ResultadoEmpuje> {
     }
   } catch (e) {
     const mensaje = e instanceof Error ? e.message : 'sin conexión'
+
+    /*
+     * Solo se reencolan los que SIGUEN en la cola.
+     *
+     * Antes se reencolaban todos, incluidos los que ya habían subido y se
+     * habían borrado unas líneas más arriba: volvían a la cola y se subían otra
+     * vez en el siguiente intento. Como todo es idempotente no se corrompía
+     * nada, pero si un tipo de documento fallaba siempre —una regla mal puesta,
+     * por ejemplo—, el resto no terminaba de vaciarse nunca y el contador de
+     * pendientes no bajaba aunque el trabajo estuviera hecho.
+     */
     for (const p of pendientes) {
-      await db.outbox.put({ ...p, intentos: p.intentos + 1, ultimoError: mensaje })
+      const sigue = await db.outbox.get(p.id)
+      if (!sigue) continue
+      await db.outbox.put({ ...sigue, intentos: sigue.intentos + 1, ultimoError: mensaje })
     }
-    return { intentadas: pendientes.length, aceptadas: 0, rechazadas: 0 }
+    // Se informa de lo que sí entró antes del fallo, que es lo que pasó.
+    return { intentadas: pendientes.length, aceptadas, rechazadas }
   }
 
   return { intentadas: pendientes.length, aceptadas, rechazadas }

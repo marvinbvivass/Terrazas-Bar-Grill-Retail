@@ -490,7 +490,11 @@ export function usePos() {
       creditos: Array<{ clienteId: UUID; monto: number }>
       nota?: string | null
     }): Promise<CierreDia | null> => {
-      if (!snapshot) return null
+      // La pantalla ya enseña el acta en vez del formulario cuando el día está
+      // cerrado, pero era la única escritura sin guardia. Si llegara a pasar,
+      // crearía un SEGUNDO juego de ventas y el acta apuntaría solo al nuevo:
+      // las primeras quedarían contando sin que nada las referencie.
+      if (!snapshot || bloqueadoPorCierre()) return null
 
       const fecha = inicioDe(dia) + 12 * 3600_000
       const datosBase = {
@@ -570,7 +574,7 @@ export function usePos() {
       void sincronizar(true)
       return acta
     },
-    [snapshot, dia, clientes, aplicarSalidaDeStock, sincronizar],
+    [snapshot, dia, clientes, aplicarSalidaDeStock, sincronizar, bloqueadoPorCierre],
   )
 
   /*
