@@ -1,10 +1,10 @@
 import { redondear } from './money'
 import type {
   CodigoBarras,
-  Existencia,
   Precio,
   Presentacion,
   Producto,
+  UnidadContenido,
   UUID,
 } from './types'
 
@@ -47,7 +47,8 @@ export interface ProductoForm {
   nombreCorto: string
   categoriaId: UUID
   marca?: string
-  contenidoMl?: number
+  contenido?: number
+  unidadContenido?: UnidadContenido
   gradoAlcohol?: number
   /** Precio de UNA unidad, tal como se cobra */
   precioDetal: number
@@ -62,8 +63,6 @@ export interface ProductoForm {
   costoPromedio?: number
   /** Lleva envase que va y viene */
   retornable?: boolean
-  /** Existencia inicial. Solo se usa al crear: después se mueve por recepciones y ventas. */
-  stock?: number
   stockMin?: number
   presentaciones?: PresentacionForm[]
 }
@@ -73,7 +72,6 @@ export interface ProductoArmado {
   presentaciones: Presentacion[]
   codigos: CodigoBarras[]
   precios: Precio[]
-  existencias: Existencia[]
 }
 
 export interface ContextoCatalogo {
@@ -114,7 +112,8 @@ export function armarProducto(form: ProductoForm, ctx: ContextoCatalogo): Produc
     nombreCorto: (form.nombreCorto || form.nombre).trim(),
     categoriaId: form.categoriaId,
     marca: form.marca?.trim() || undefined,
-    contenidoMl: form.contenidoMl,
+    contenido: form.contenido,
+    unidadContenido: form.contenido ? (form.unidadContenido ?? 'ml') : undefined,
     gradoAlcohol: form.gradoAlcohol,
     /*
      * Sin IVA.
@@ -201,13 +200,16 @@ export function armarProducto(form: ProductoForm, ctx: ContextoCatalogo): Produc
     })
   }
 
-  // --- Existencia inicial ---
-  const existencias: Existencia[] = []
-  if ((form.stock ?? 0) !== 0) {
-    existencias.push({ productoId, ubicacionId: ctx.ubicacion, cantidadBase: form.stock ?? 0 })
-  }
+  /*
+   * El alta NO trae existencia.
+   *
+   * El catálogo dice QUÉ es el producto; cuánto hay es asunto del inventario, y
+   * ahí entra por recepción, que deja factura, costo y fecha. Poder teclear una
+   * existencia inicial aquí era la puerta trasera por la que el stock cambiaba
+   * sin dejar ni un asiento que lo explicara.
+   */
 
-  return { producto, presentaciones, codigos, precios, existencias }
+  return { producto, presentaciones, codigos, precios }
 }
 
 /** Reconstruye el formulario desde lo que ya está guardado, para poder editar */
@@ -217,7 +219,6 @@ export function desarmarProducto(
   /** Se conserva en la firma para no tocar a quien llama; ya no se usa. */
   _codigos: CodigoBarras[],
   precios: Precio[],
-  existencias: Map<string, number>,
   ctx: ContextoCatalogo,
 ): ProductoForm {
   const base = presentaciones.find((p) => p.esBase)
@@ -232,12 +233,12 @@ export function desarmarProducto(
     nombreCorto: producto.nombreCorto,
     categoriaId: producto.categoriaId,
     marca: producto.marca,
-    contenidoMl: producto.contenidoMl,
+    contenido: producto.contenido,
+    unidadContenido: producto.unidadContenido ?? 'ml',
     gradoAlcohol: producto.gradoAlcohol,
     precioDetal: (base && precioDe(base.id, ctx.listaDetal)) ?? 0,
     costoPromedio: producto.costoPromedio,
     retornable: producto.retornable,
-    stock: existencias.get(`${producto.id}::${ctx.ubicacion}`) ?? 0,
     stockMin: producto.stockMin,
     presentaciones: extras.map((p) => ({
       nombre: p.nombre,

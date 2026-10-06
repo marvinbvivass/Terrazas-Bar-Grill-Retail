@@ -46,6 +46,15 @@ export interface Categoria {
   orden: number
 }
 
+/** Mililitros para líquidos, gramos para sólidos, miligramos para lo menudo */
+export type UnidadContenido = 'ml' | 'g' | 'mg'
+
+export const UNIDADES_CONTENIDO: Array<{ id: UnidadContenido; nombre: string }> = [
+  { id: 'ml', nombre: 'ml' },
+  { id: 'g', nombre: 'g' },
+  { id: 'mg', nombre: 'mg' },
+]
+
 export interface Producto {
   id: UUID
   sku: string
@@ -54,7 +63,16 @@ export interface Producto {
   nombreCorto: string
   categoriaId: UUID
   marca?: string
-  contenidoMl?: number
+  /**
+   * Cuánto trae la unidad, en la medida que le corresponda.
+   *
+   * Antes solo había `contenidoMl`, que servía para la cerveza y no para el
+   * hielo ni para los snacks: una bolsa de maní no se mide en mililitros, y
+   * ponerle 500 "ml" para rellenar el campo es un dato falso dentro del
+   * sistema. La medida viaja al lado del número.
+   */
+  contenido?: number
+  unidadContenido?: UnidadContenido
   gradoAlcohol?: number
   /** Tasa de IVA como fracción: 0.16, o 0 si es exento */
   iva: number

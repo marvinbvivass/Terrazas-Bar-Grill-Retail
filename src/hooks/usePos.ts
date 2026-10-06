@@ -908,11 +908,8 @@ export function usePos() {
   )
 
   const guardarProducto = useCallback(
-    async (
-      armado: Parameters<typeof guardarProductoDb>[0],
-      opciones?: Parameters<typeof guardarProductoDb>[1],
-    ) => {
-      await guardarProductoDb(armado, opciones)
+    async (armado: Parameters<typeof guardarProductoDb>[0]) => {
+      await guardarProductoDb(armado)
       await recargarCatalogo()
       setAviso({ texto: `${armado.producto.nombreCorto} guardado`, tono: 'ok' })
       void sincronizar(true)

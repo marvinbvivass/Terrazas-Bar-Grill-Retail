@@ -22,7 +22,8 @@ const cerveza: ProductoForm = {
   precioDetal: 1.0,
   costoPromedio: 0.6,
   retornable: true,
-  stock: 312,
+  contenido: 222,
+  unidadContenido: 'ml',
   stockMin: 72,
   presentaciones: [{ nombre: 'Six-pack', factor: 6, precio: 5.7 }],
 }
@@ -77,13 +78,25 @@ describe('armar un producto desde el formulario', () => {
     expect(six.precio).toBe(6.0)
   })
 
-  it('la existencia inicial va a la única ubicación, y omite el cero', () => {
-    const a = armarProducto(cerveza, CTX)
-    expect(a.existencias).toHaveLength(1)
-    expect(a.existencias[0]!.ubicacionId).toBe('ubi-general')
-    expect(a.existencias[0]!.cantidadBase).toBe(312)
+  it('dar de alta un producto NO mueve existencias', () => {
+    // El catálogo dice qué es el producto; cuánto hay es asunto del inventario
+    // y entra por recepción, que deja factura, costo y fecha.
+    expect('existencias' in armarProducto(cerveza, CTX)).toBe(false)
+  })
 
-    expect(armarProducto({ ...cerveza, stock: 0 }, CTX).existencias).toHaveLength(0)
+  it('el contenido lleva su medida al lado', () => {
+    const a = armarProducto(cerveza, CTX)
+    expect(a.producto.contenido).toBe(222)
+    expect(a.producto.unidadContenido).toBe('ml')
+
+    const mani = armarProducto({ ...cerveza, contenido: 40, unidadContenido: 'g' }, CTX)
+    expect(mani.producto.unidadContenido).toBe('g')
+  })
+
+  it('sin contenido no se inventa una medida', () => {
+    const a = armarProducto({ ...cerveza, contenido: undefined }, CTX)
+    expect(a.producto.contenido).toBeUndefined()
+    expect(a.producto.unidadContenido).toBeUndefined()
   })
 
   it('los productos no llevan IVA: el negocio cobra el precio de la pizarra', () => {
@@ -114,14 +127,11 @@ describe('armar un producto desde el formulario', () => {
 describe('ida y vuelta del formulario', () => {
   it('lo que se guarda se puede volver a editar sin perder nada', () => {
     const a = armarProducto({ ...cerveza, id: 'prod-1' }, CTX)
-    const existencias = new Map(a.existencias.map((e) => [`${e.productoId}::${e.ubicacionId}`, e.cantidadBase]))
-
-    const vuelta = desarmarProducto(a.producto, a.presentaciones, a.codigos, a.precios, existencias, CTX)
+    const vuelta = desarmarProducto(a.producto, a.presentaciones, a.codigos, a.precios, CTX)
 
     expect(vuelta.nombre).toBe(cerveza.nombre)
     expect(vuelta.precioDetal).toBe(1.0)
     expect(vuelta.costoPromedio).toBe(0.6)
-    expect(vuelta.stock).toBe(312)
     expect(vuelta.presentaciones).toEqual([{ nombre: 'Six-pack', factor: 6, precio: 5.7 }])
   })
 })

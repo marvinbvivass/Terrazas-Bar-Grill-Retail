@@ -200,6 +200,30 @@ class LicoreriaDB extends Dexie {
     this.version(8).stores({
       tasasDia: 'id, dia, moneda',
     })
+
+    /*
+     * Versión 9: el contenido deja de ser siempre mililitros.
+     *
+     * Los productos que ya existen traen `contenidoMl`. Se pasan a `contenido`
+     * con la medida 'ml', que es lo que eran. Sin esto el número seguiría en la
+     * base pero ninguna pantalla lo leería: el formulario mostraría el campo
+     * vacío y al guardar se perdería.
+     */
+    this.version(9)
+      .stores({})
+      .upgrade(async (tx) => {
+        const productos = await tx.table('productos').toArray()
+        for (const p of productos) {
+          if (p.contenidoMl === undefined || p.contenido !== undefined) continue
+          await tx.table('productos').put({
+            ...p,
+            contenido: p.contenidoMl,
+            unidadContenido: 'ml',
+            contenidoMl: undefined,
+          })
+        }
+      })
+
   }
 }
 
@@ -454,26 +478,21 @@ export async function guardarProducto(armado: {
   presentaciones: Presentacion[]
   codigos: CodigoBarras[]
   precios: Precio[]
-  existencias: Existencia[]
-}, opciones: { aplicarExistencias?: boolean } = {}): Promise<void> {
+}): Promise<void> {
   /*
-   * Las existencias solo se escriben al CREAR el producto.
+   * Guardar un producto NO toca existencias.
    *
-   * Al editar no se tocan, y esto arregla un fallo silencioso: el formulario
-   * carga la existencia al abrirse, así que si alguien lo abría a las seis de
-   * la tarde (100 botellas), se cerraba el día vendiendo 20, y después guardaba
-   * el formulario, la existencia volvía a 100. Las botellas vendidas
-   * reaparecían en el anaquel sin que nadie lo notara.
+   * Antes el formulario traía la existencia y al guardar la sobrescribía: si
+   * alguien lo abría a las seis de la tarde con 100 botellas, se cerraba el día
+   * vendiendo 20 y después guardaba, la existencia volvía a 100. Las botellas
+   * vendidas reaparecían en el anaquel sin que nadie lo notara.
    *
-   * Además, escribir la existencia a mano no dejaba asiento de kardex: no había
-   * forma de saber si faltaban botellas porque se rompieron, se las llevó
-   * alguien o nunca llegaron. Ahora el stock se mueve por recepciones y ventas,
-   * que sí dejan rastro.
+   * Ahora el stock solo se mueve por recepción, venta, merma, conteo y
+   * devolución, y las cinco dejan asiento.
    */
-  const aplicarExistencias = opciones.aplicarExistencias !== false
   await db.transaction(
     'rw',
-    [db.productos, db.presentaciones, db.codigos, db.precios, db.existencias, db.outbox],
+    [db.productos, db.presentaciones, db.codigos, db.precios, db.outbox],
     async () => {
       const viejas = await db.presentaciones.where('productoId').equals(armado.producto.id).toArray()
       const idsViejos = viejas.map((p) => p.id)
@@ -490,12 +509,6 @@ export async function guardarProducto(armado: {
       await db.presentaciones.bulkPut(armado.presentaciones)
       await db.codigos.bulkPut(armado.codigos)
       await db.precios.bulkPut(armado.precios)
-      if (aplicarExistencias) {
-        for (const e of armado.existencias) {
-          await db.existencias.put({ ...e, id: claveExistencia(e.productoId, e.ubicacionId) })
-        }
-      }
-
       await db.outbox.put({
         id: armado.producto.id,
         tipo: 'producto',

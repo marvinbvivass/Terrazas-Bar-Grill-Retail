@@ -9,7 +9,7 @@ import {
 } from '../domain/catalogo'
 import { formato, parsearMonto } from '../domain/money'
 import { CONTEXTO_CATALOGO, UBICACION_VENTA_DEFECTO } from '../data/seed'
-import type { Producto } from '../domain/types'
+import { UNIDADES_CONTENIDO, type Producto, type UnidadContenido } from '../domain/types'
 import type { Pos } from '../hooks/usePos'
 
 const VACIO: ProductoForm = {
@@ -17,7 +17,7 @@ const VACIO: ProductoForm = {
   nombreCorto: '',
   categoriaId: 'cat-cerveza',
   precioDetal: 0,
-  stock: 0,
+  unidadContenido: 'ml',
   stockMin: 0,
   presentaciones: [],
 }
@@ -52,7 +52,6 @@ export function CatalogoView({ pos }: { pos: Pos }) {
         pres,
         [...s.codigos.values()].filter((c) => idsPres.has(c.presentacionId)),
         s.precios.filter((x) => idsPres.has(x.presentacionId)),
-        s.existencias,
         CONTEXTO_CATALOGO,
       ),
     )
@@ -175,6 +174,32 @@ function Editor({
 
   const set = <K extends keyof ProductoForm>(k: K, v: ProductoForm[K]) => setF((x) => ({ ...x, [k]: v }))
 
+  /*
+   * Las presentaciones se manejan por casilla y no por lista libre.
+   *
+   * El encargado no piensa "agregar una presentación con factor 24": piensa
+   * "esto también se vende por caja". La lista libre obligaba a inventar el
+   * nombre y acordarse de cuántas trae, y un nombre mal escrito deja al
+   * producto con dos cajas distintas.
+   */
+  const presentaciones = f.presentaciones ?? []
+  const indiceDe = (nombre: string) => presentaciones.findIndex((p) => p.nombre === nombre)
+  const paquete = presentaciones.find((p) => p.nombre === 'Paquete')
+  const caja = presentaciones.find((p) => p.nombre === 'Caja')
+
+  function alternar(nombre: 'Paquete' | 'Caja', activa: boolean, porDefecto: number) {
+    setF((x) => {
+      const lista = [...(x.presentaciones ?? [])]
+      const i = lista.findIndex((p) => p.nombre === nombre)
+      if (activa && i === -1) {
+        lista.push({ nombre, factor: porDefecto, precio: 0 })
+      } else if (!activa && i !== -1) {
+        lista.splice(i, 1)
+      }
+      return { ...x, presentaciones: lista }
+    })
+  }
+
   function cambiarPres(i: number, campo: keyof PresentacionForm, valor: string | number) {
     setF((x) => {
       const lista = [...(x.presentaciones ?? [])]
@@ -188,7 +213,7 @@ function Editor({
     // Las existencias solo se escriben al crear. Al editar no se tocan: el
     // formulario las cargó al abrirse y guardarlas después resucitaría lo que
     // se haya vendido mientras tanto.
-    await pos.guardarProducto(armarProducto(f, CONTEXTO_CATALOGO), { aplicarExistencias: esNuevo })
+    await pos.guardarProducto(armarProducto(f, CONTEXTO_CATALOGO))
     setGuardando(false)
     onCerrar()
   }
@@ -248,13 +273,30 @@ function Editor({
             </select>
           </Campo>
 
-          <Campo etiqueta="Contenido ml" ayuda="Opcional">
-            <input
-              value={f.contenidoMl ?? ''}
-              onChange={(e) => set('contenidoMl', Number(e.target.value) || undefined)}
-              inputMode="numeric"
-              className={entrada}
-            />
+          <Campo etiqueta="Contenido" ayuda="Opcional. Lo que trae una unidad">
+            <div className="flex gap-2">
+              <input
+                value={f.contenido ?? ''}
+                onChange={(e) => set('contenido', Number(e.target.value) || undefined)}
+                inputMode="numeric"
+                placeholder="222"
+                className={`${entrada} flex-1 text-right`}
+              />
+              {/* La medida va al lado del número: una bolsa de maní no se mide
+                  en mililitros, y rellenar el campo con "500 ml" es un dato
+                  falso dentro del sistema. */}
+              <select
+                value={f.unidadContenido ?? 'ml'}
+                onChange={(e) => set('unidadContenido', e.target.value as UnidadContenido)}
+                className={`${entrada} w-20`}
+              >
+                {UNIDADES_CONTENIDO.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.nombre}
+                  </option>
+                ))}
+              </select>
+            </div>
           </Campo>
         </Bloque>
 
@@ -290,115 +332,50 @@ function Editor({
           )}
         </Bloque>
 
-        {/* --- Presentaciones --- */}
-        <Bloque titulo="Cómo se vende">
-          <div className="col-span-2">
-            <p className="mb-2 text-[13px] leading-relaxed text-apagado">
-              Por unidad siempre, al precio de arriba. Agrega paquete o caja solo si además lo
-              vendes así. Una caja no es otro producto: es la misma botella contada de otra forma,
-              y el inventario sigue siendo uno solo.
+        {/* --- Cómo se vende --- */}
+        <Bloque titulo="Venta por">
+          <div className="col-span-2 flex flex-col gap-2">
+            <CasillaVenta activa titulo="Unidad" detalle={`Siempre. ${formato(f.precioDetal, 'USD')} cada una`} />
+
+            <CasillaVenta
+              activa={!!paquete}
+              titulo="Paquete"
+              detalle={paquete ? `${paquete.factor} unidades` : 'Six-pack, bandeja, bolsa…'}
+              onCambio={(v) => alternar('Paquete', v, 6)}
+            />
+            {paquete && (
+              <FilaBulto
+                nombre="paquete"
+                pres={paquete}
+                onCambio={(campo, valor) => cambiarPres(indiceDe('Paquete'), campo, valor)}
+              />
+            )}
+
+            <CasillaVenta
+              activa={!!caja}
+              titulo="Caja"
+              detalle={caja ? `${caja.factor} unidades` : 'Caja, gavera, bulto…'}
+              onCambio={(v) => alternar('Caja', v, 24)}
+            />
+            {caja && (
+              <FilaBulto
+                nombre="caja"
+                pres={caja}
+                onCambio={(campo, valor) => cambiarPres(indiceDe('Caja'), campo, valor)}
+              />
+            )}
+
+            <p className="pt-1 text-[12.5px] leading-relaxed text-apagado">
+              Una caja no es otro producto: es la misma unidad contada de otra forma, y el
+              inventario sigue siendo uno solo. Al vender tres cajas salen del anaquel las unidades
+              que traen dentro.
             </p>
-            {(f.presentaciones ?? []).map((p, i) => (
-              <div key={i} className="mb-2 flex flex-wrap items-end gap-2">
-                <label className="flex-1">
-                  <span className={etiqueta}>Nombre</span>
-                  <input
-                    value={p.nombre}
-                    onChange={(e) => cambiarPres(i, 'nombre', e.target.value)}
-                    placeholder="Six-pack"
-                    className={entrada}
-                  />
-                </label>
-                <label className="w-28">
-                  <span className={etiqueta}>Trae</span>
-                  <input
-                    value={p.factor || ''}
-                    onChange={(e) => cambiarPres(i, 'factor', Number(e.target.value) || 0)}
-                    inputMode="numeric"
-                    placeholder="6"
-                    className={`${entrada} text-right`}
-                  />
-                </label>
-                <label className="w-32">
-                  <span className={etiqueta}>Precio total</span>
-                  <input
-                    value={p.precio || ''}
-                    onChange={(e) => cambiarPres(i, 'precio', parsearMonto(e.target.value))}
-                    inputMode="decimal"
-                    placeholder="5,70"
-                    className={`${entrada} text-right`}
-                  />
-                </label>
-                <button
-                  onClick={() => set('presentaciones', (f.presentaciones ?? []).filter((_, j) => j !== i))}
-                  className="h-[42px] rounded-md border border-linea px-3 font-mono text-[10px] tracking-wider text-apagado uppercase hover:border-alerta hover:text-alerta"
-                >
-                  Quitar
-                </button>
-              </div>
-            ))}
-            <div className="mt-1 flex flex-wrap gap-2">
-              {/* Atajos con lo de siempre: así nadie tiene que acordarse de
-                  cuántas trae un six-pack ni teclear el nombre. */}
-              <button
-                onClick={() =>
-                  set('presentaciones', [
-                    ...(f.presentaciones ?? []),
-                    { nombre: 'Paquete', factor: 6, precio: 0 },
-                  ])
-                }
-                className="rounded-md border border-linea2 px-3.5 py-2 text-[13px] font-semibold text-tinta2 hover:border-cobre hover:text-cobre2"
-              >
-                + Paquete de 6
-              </button>
-              <button
-                onClick={() =>
-                  set('presentaciones', [
-                    ...(f.presentaciones ?? []),
-                    { nombre: 'Caja', factor: 24, precio: 0 },
-                  ])
-                }
-                className="rounded-md border border-linea2 px-3.5 py-2 text-[13px] font-semibold text-tinta2 hover:border-cobre hover:text-cobre2"
-              >
-                + Caja de 24
-              </button>
-              <button
-                onClick={() =>
-                  set('presentaciones', [
-                    ...(f.presentaciones ?? []),
-                    { nombre: '', factor: 0, precio: 0 },
-                  ])
-                }
-                className="rounded-md border border-linea2 px-3.5 py-2 text-[13px] font-semibold text-tinta2 hover:border-cobre hover:text-cobre2"
-              >
-                + Otra
-              </button>
-            </div>
           </div>
         </Bloque>
 
-        {/* --- Stock --- */}
-        <Bloque titulo={esNuevo ? 'Cuánto tienes hoy' : 'Existencia'}>
-          {esNuevo ? (
-            <Campo etiqueta="Cuántas unidades tienes" ayuda="Lo que hay ahora mismo">
-              <input
-                value={f.stock || ''}
-                onChange={(e) => set('stock', Number(e.target.value) || 0)}
-                inputMode="numeric"
-                className={`${entrada} text-right`}
-              />
-            </Campo>
-          ) : (
-            <div className="col-span-2 rounded-lg border border-linea bg-panel2 px-3 py-2.5">
-              <p className="text-[13.5px] font-semibold">{f.stock} unidades</p>
-              <p className="pt-1 text-[12.5px] leading-relaxed text-tinta2">
-                La existencia no se edita aquí. Sube con <b>Inventario → Recibir mercancía</b> y
-                baja al cerrar el día, y así cada movimiento deja constancia de cuándo, cuánto y
-                quién. Escribirla a mano dejaba botellas que el kardex no podía explicar.
-              </p>
-            </div>
-          )}
-          <Campo etiqueta="Avisarme desde" ayuda="Cuando baje de aquí">
+        {/* --- Aviso de existencia baja --- */}
+        <Bloque titulo="Aviso de poca existencia" opcional>
+          <Campo etiqueta="Avisarme desde" ayuda="Cuando el inventario baje de aquí">
             <input
               value={f.stockMin || ''}
               onChange={(e) => set('stockMin', Number(e.target.value) || 0)}
@@ -406,6 +383,11 @@ function Editor({
               className={`${entrada} text-right`}
             />
           </Campo>
+          <div className="col-span-2 rounded-lg bg-panel2 px-3.5 py-2.5 text-[12.5px] leading-relaxed text-tinta2">
+            Las cantidades no se tocan aquí. Un producto nuevo arranca en cero y sube cuando
+            registras la mercancía en <b>Inventario → Recibir mercancía</b>, que deja constancia de
+            cuánto llegó, a qué costo y cuándo.
+          </div>
         </Bloque>
 
         {problemas.length > 0 && (
@@ -505,6 +487,83 @@ function Interruptor({ valor, onCambio }: { valor: boolean; onCambio: (v: boolea
           {v ? 'Sí' : 'No'}
         </button>
       ))}
+    </div>
+  )
+}
+
+/**
+ * Una forma de venta, como casilla.
+ *
+ * La unidad va siempre activa y sin poder apagarse: es la presentación base, de
+ * la que cuelgan el stock y el precio. Un producto sin unidad no existe.
+ */
+function CasillaVenta({
+  activa,
+  titulo,
+  detalle,
+  onCambio,
+}: {
+  activa: boolean
+  titulo: string
+  detalle: string
+  onCambio?: (valor: boolean) => void
+}) {
+  const fija = onCambio === undefined
+  return (
+    <label
+      className={`flex items-center gap-3 rounded-lg border px-3.5 py-3 ${
+        activa ? 'border-cobre bg-cobre/10' : 'border-linea bg-panel2'
+      } ${fija ? '' : 'cursor-pointer'}`}
+    >
+      <input
+        type="checkbox"
+        checked={activa}
+        disabled={fija}
+        onChange={(e) => onCambio?.(e.target.checked)}
+        className="h-5 w-5 shrink-0"
+      />
+      <span className="min-w-0">
+        <span className="block text-[14.5px] font-semibold">{titulo}</span>
+        <span className="block text-[12.5px] text-apagado">{detalle}</span>
+      </span>
+    </label>
+  )
+}
+
+/** Cuántas trae y a cuánto se vende ese bulto */
+function FilaBulto({
+  nombre,
+  pres,
+  onCambio,
+}: {
+  nombre: string
+  pres: PresentacionForm
+  onCambio: (campo: keyof PresentacionForm, valor: string | number) => void
+}) {
+  return (
+    <div className="ml-8 flex gap-2 pb-1">
+      <label className="flex-1">
+        <span className="mb-1 block font-mono text-[10px] tracking-[0.1em] text-apagado uppercase">
+          Unidades por {nombre}
+        </span>
+        <input
+          value={pres.factor || ''}
+          onChange={(e) => onCambio('factor', Number(e.target.value) || 0)}
+          inputMode="numeric"
+          className="w-full rounded-lg border border-linea bg-panel2 px-3 py-2.5 text-right font-bold"
+        />
+      </label>
+      <label className="flex-1">
+        <span className="mb-1 block font-mono text-[10px] tracking-[0.1em] text-apagado uppercase">
+          Precio del {nombre}
+        </span>
+        <input
+          value={pres.precio || ''}
+          onChange={(e) => onCambio('precio', parsearMonto(e.target.value))}
+          inputMode="decimal"
+          className="w-full rounded-lg border border-linea bg-panel2 px-3 py-2.5 text-right font-bold"
+        />
+      </label>
     </div>
   )
 }
