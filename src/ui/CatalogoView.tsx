@@ -17,7 +17,6 @@ const VACIO: ProductoForm = {
   nombreCorto: '',
   categoriaId: 'cat-cerveza',
   precioDetal: 0,
-  costo: 0,
   stock: 0,
   stockMin: 0,
   presentaciones: [],
@@ -116,7 +115,9 @@ export function CatalogoView({ pos }: { pos: Pos }) {
                   ? s?.precios.find((x) => x.presentacionId === base.id && x.listaId === 'lst-detal')?.precio
                   : undefined
                 const existencia = pos.stockDe(p.id, UBICACION_VENTA_DEFECTO)
-                const m = precio ? margen(precio, p.costoPromedio, p.iva) : 0
+                // Sin recepciones el costo es cero y el margen saldría 100%:
+                // mejor no enseñar un número que miente.
+                const m = precio && p.costoPromedio > 0 ? margen(precio, p.costoPromedio, p.iva) : null
 
                 return (
                   <li key={p.id}>
@@ -136,7 +137,7 @@ export function CatalogoView({ pos }: { pos: Pos }) {
                           {precio !== undefined ? formato(precio, 'USD') : '—'}
                         </p>
                         <p className="tabular font-mono text-[10px] text-apagado">
-                          margen {m}%
+                          {m === null ? 'sin costo aún' : `margen ${m}%`}
                         </p>
                       </div>
                       <div className="w-24 text-right">
@@ -170,8 +171,7 @@ function Editor({
   const esNuevo = !inicial.id
 
   const problemas = validarProducto(f)
-  const puedeGuardar = problemas.filter((p) => p.campo !== 'costo').length === 0 && f.precioDetal > 0
-  const m = margen(f.precioDetal, f.costo, f.exento ? 0 : 0.16)
+  const puedeGuardar = problemas.length === 0 && f.precioDetal > 0
 
   const set = <K extends keyof ProductoForm>(k: K, v: ProductoForm[K]) => setF((x) => ({ ...x, [k]: v }))
 
@@ -259,8 +259,8 @@ function Editor({
         </Bloque>
 
         {/* --- Precio --- */}
-        <Bloque titulo="Cuánto cuesta">
-          <Campo etiqueta="Precio de una unidad" ayuda="Con el IVA ya incluido, como lo cobras">
+        <Bloque titulo="Precio de venta">
+          <Campo etiqueta="Precio de una unidad" ayuda="Tal como lo cobras en el mostrador">
             <input
               value={f.precioDetal || ''}
               onChange={(e) => set('precioDetal', parsearMonto(e.target.value))}
@@ -270,42 +270,33 @@ function Editor({
             />
           </Campo>
 
-          <Campo etiqueta="Lo que te cuesta" ayuda="Por unidad. Sin esto no hay margen">
-            <input
-              value={f.costo || ''}
-              onChange={(e) => set('costo', parsearMonto(e.target.value))}
-              inputMode="decimal"
-              placeholder="0,60"
-              className={`${entrada} text-right`}
-            />
-          </Campo>
-
-          <div className="col-span-2 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-lg bg-panel2 px-3.5 py-2.5">
-            <span className="font-mono text-[10px] tracking-[0.12em] text-apagado uppercase">Margen</span>
-            <span className={`tabular text-lg font-bold ${m <= 0 ? 'text-alerta' : m < 15 ? 'text-ambar' : 'text-verde'}`}>
-              {m}%
-            </span>
-            <span className="font-mono text-[11px] text-apagado">
-              El mayoreo se calcula solo: {f.categoriaId === 'cat-cerveza' || f.categoriaId === 'cat-mezcla' || f.categoriaId === 'cat-snacks' || f.categoriaId === 'cat-cigarrillos' || f.categoriaId === 'cat-hielo'
-                ? '12% menos desde 24 unidades'
-                : '8% menos desde 6 unidades'}
-            </span>
-          </div>
-
-          <Campo etiqueta="Exento de IVA">
-            <Interruptor valor={f.exento ?? false} onCambio={(v) => set('exento', v)} />
-          </Campo>
-          <Campo etiqueta="Envase retornable" ayuda="Cerveza de casco">
+          <Campo etiqueta="Maneja vacío" ayuda="Cerveza y refresco de casco">
             <Interruptor valor={f.retornable ?? false} onCambio={(v) => set('retornable', v)} />
           </Campo>
+
+          {!esNuevo && (f.costoPromedio ?? 0) > 0 && (
+            <p className="col-span-2 rounded-lg bg-panel2 px-3.5 py-2.5 text-[12.5px] leading-relaxed text-tinta2">
+              Te cuesta <b>{formato(f.costoPromedio ?? 0, 'USD')}</b> la unidad, calculado con lo
+              que le has pagado al proveedor. Deja{' '}
+              <b>{margen(f.precioDetal, f.costoPromedio ?? 0, 0)}%</b> de margen.
+            </p>
+          )}
+
+          {(f.costoPromedio ?? 0) === 0 && (
+            <p className="col-span-2 rounded-lg bg-panel2 px-3.5 py-2.5 text-[12.5px] leading-relaxed text-apagado">
+              El costo no se escribe aquí: sale solo de las facturas, al recibir mercancía. Hasta
+              la primera recepción el margen de este producto se verá como si fuera todo ganancia.
+            </p>
+          )}
         </Bloque>
 
         {/* --- Presentaciones --- */}
-        <Bloque titulo="Six-packs y cajas" opcional>
+        <Bloque titulo="Cómo se vende">
           <div className="col-span-2">
-            <p className="mb-2 text-[13px] text-apagado">
-              Solo si además de por unidad lo vendes por paquete. Una caja no es otro producto: es
-              la misma botella contada de otra forma, así que el stock sigue siendo uno solo.
+            <p className="mb-2 text-[13px] leading-relaxed text-apagado">
+              Por unidad siempre, al precio de arriba. Agrega paquete o caja solo si además lo
+              vendes así. Una caja no es otro producto: es la misma botella contada de otra forma,
+              y el inventario sigue siendo uno solo.
             </p>
             {(f.presentaciones ?? []).map((p, i) => (
               <div key={i} className="mb-2 flex flex-wrap items-end gap-2">
@@ -346,12 +337,43 @@ function Editor({
                 </button>
               </div>
             ))}
-            <button
-              onClick={() => set('presentaciones', [...(f.presentaciones ?? []), { nombre: '', factor: 0, precio: 0 }])}
-              className="mt-1 rounded-md border border-linea2 px-3.5 py-2 text-[13px] font-semibold text-tinta2 hover:border-cobre hover:text-cobre2"
-            >
-              Agregar presentación
-            </button>
+            <div className="mt-1 flex flex-wrap gap-2">
+              {/* Atajos con lo de siempre: así nadie tiene que acordarse de
+                  cuántas trae un six-pack ni teclear el nombre. */}
+              <button
+                onClick={() =>
+                  set('presentaciones', [
+                    ...(f.presentaciones ?? []),
+                    { nombre: 'Paquete', factor: 6, precio: 0 },
+                  ])
+                }
+                className="rounded-md border border-linea2 px-3.5 py-2 text-[13px] font-semibold text-tinta2 hover:border-cobre hover:text-cobre2"
+              >
+                + Paquete de 6
+              </button>
+              <button
+                onClick={() =>
+                  set('presentaciones', [
+                    ...(f.presentaciones ?? []),
+                    { nombre: 'Caja', factor: 24, precio: 0 },
+                  ])
+                }
+                className="rounded-md border border-linea2 px-3.5 py-2 text-[13px] font-semibold text-tinta2 hover:border-cobre hover:text-cobre2"
+              >
+                + Caja de 24
+              </button>
+              <button
+                onClick={() =>
+                  set('presentaciones', [
+                    ...(f.presentaciones ?? []),
+                    { nombre: '', factor: 0, precio: 0 },
+                  ])
+                }
+                className="rounded-md border border-linea2 px-3.5 py-2 text-[13px] font-semibold text-tinta2 hover:border-cobre hover:text-cobre2"
+              >
+                + Otra
+              </button>
+            </div>
           </div>
         </Bloque>
 

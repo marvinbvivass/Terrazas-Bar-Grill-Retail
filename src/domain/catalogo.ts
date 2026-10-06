@@ -49,17 +49,23 @@ export interface ProductoForm {
   marca?: string
   contenidoMl?: number
   gradoAlcohol?: number
-  /** Precio de UNA unidad, con IVA incluido */
+  /** Precio de UNA unidad, tal como se cobra */
   precioDetal: number
-  costo: number
-  exento?: boolean
+  /**
+   * El costo NO se teclea: lo aprende el sistema de las facturas de recepción.
+   *
+   * Viaja en el formulario solo para no perderlo al editar. Un producto que ya
+   * recibió mercancía tiene un costo promedio calculado contra lo que de verdad
+   * se le pagó al proveedor; si al guardar una edición se escribiera cero, el
+   * margen de ese producto se iría al 100% y nadie entendería por qué.
+   */
+  costoPromedio?: number
+  /** Lleva envase que va y viene */
   retornable?: boolean
   /** Existencia inicial. Solo se usa al crear: después se mueve por recepciones y ventas. */
   stock?: number
   stockMin?: number
   presentaciones?: PresentacionForm[]
-  /** Genera el precio de mayor automáticamente. Por defecto sí. */
-  conMayoreo?: boolean
 }
 
 export interface ProductoArmado {
@@ -110,13 +116,23 @@ export function armarProducto(form: ProductoForm, ctx: ContextoCatalogo): Produc
     marca: form.marca?.trim() || undefined,
     contenidoMl: form.contenidoMl,
     gradoAlcohol: form.gradoAlcohol,
-    iva: form.exento ? 0 : 0.16,
+    /*
+     * Sin IVA.
+     *
+     * El negocio cobra el precio de la pizarra y no desglosa impuesto en el
+     * ticket. Con 0, `subtotal` y `total` coinciden y el cierre deja de
+     * arrastrar una base imponible que nadie mira. El motor sigue soportando
+     * IVA por si algún día hace falta facturar.
+     */
+    iva: 0,
     unidadBase: 'unidad',
     controlaLote: false,
     fraccionable: false,
     retornable: form.retornable ?? false,
     stockMin: form.stockMin ?? 0,
-    costoPromedio: redondear(form.costo, 4),
+    // Se conserva el que ya tenía; para uno nuevo arranca en cero y lo fija la
+    // primera recepción.
+    costoPromedio: redondear(form.costoPromedio ?? 0, 4),
     activo: true,
   }
 
@@ -150,18 +166,15 @@ export function armarProducto(form: ProductoForm, ctx: ContextoCatalogo): Produc
     },
   ]
 
-  if (form.conMayoreo !== false) {
-    const porBulto = CATEGORIA_BULTO.has(form.categoriaId)
-    const regla = porBulto ? MAYOREO.bulto : MAYOREO.resto
-    precios.push({
-      id: `${baseId}-mayor`,
-      listaId: porBulto ? ctx.listaMayorBulto : ctx.listaMayorResto,
-      presentacionId: baseId,
-      precio: redondear(form.precioDetal * (1 - regla.descuento), 2),
-      vigenteDesde: ahora,
-      vigenteHasta: null,
-    })
-  }
+  /*
+   * Ya no se genera precio de mayor automático.
+   *
+   * Esas listas se activaban por cantidad acumulada, y el único sitio donde hoy
+   * se registran ventas es el cierre del día, que lleva los escalones apagados
+   * a propósito: su carrito es la jornada entera y no la compra de un cliente.
+   * O sea que esas filas no llegaban a aplicarse nunca. Vender más barato por
+   * bulto se hace dándole su precio a la presentación de paquete o caja.
+   */
 
   // --- Presentaciones extra: six-pack, caja… ---
   for (const p of form.presentaciones ?? []) {
@@ -222,8 +235,7 @@ export function desarmarProducto(
     contenidoMl: producto.contenidoMl,
     gradoAlcohol: producto.gradoAlcohol,
     precioDetal: (base && precioDe(base.id, ctx.listaDetal)) ?? 0,
-    costo: producto.costoPromedio,
-    exento: producto.iva === 0,
+    costoPromedio: producto.costoPromedio,
     retornable: producto.retornable,
     stock: existencias.get(`${producto.id}::${ctx.ubicacion}`) ?? 0,
     stockMin: producto.stockMin,
@@ -246,10 +258,6 @@ export function validarProducto(form: ProductoForm): ProblemaCatalogo[] {
   if (!form.nombre.trim()) p.push({ campo: 'nombre', mensaje: 'Falta el nombre' })
   if (!form.categoriaId) p.push({ campo: 'categoria', mensaje: 'Elige una categoría' })
   if (!(form.precioDetal > 0)) p.push({ campo: 'precioDetal', mensaje: 'El precio tiene que ser mayor que cero' })
-  if (form.costo < 0) p.push({ campo: 'costo', mensaje: 'El costo no puede ser negativo' })
-  if (form.costo > 0 && form.precioDetal > 0 && form.costo >= form.precioDetal) {
-    p.push({ campo: 'costo', mensaje: 'El costo es igual o mayor que el precio: estarías vendiendo a pérdida' })
-  }
   for (const pr of form.presentaciones ?? []) {
     if (pr.nombre.trim() && !(pr.factor > 1)) {
       p.push({ campo: 'presentaciones', mensaje: `"${pr.nombre}" tiene que traer más de una unidad` })

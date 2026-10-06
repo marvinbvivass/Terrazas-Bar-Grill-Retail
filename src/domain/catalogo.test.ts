@@ -20,7 +20,7 @@ const cerveza: ProductoForm = {
   nombreCorto: 'Polar Pilsen',
   categoriaId: 'cat-cerveza',
   precioDetal: 1.0,
-  costo: 0.6,
+  costoPromedio: 0.6,
   retornable: true,
   stock: 312,
   stockMin: 72,
@@ -36,24 +36,18 @@ describe('armar un producto desde el formulario', () => {
     expect(base[0]!.nombre).toBe('Unidad')
   })
 
-  it('genera un precio por lista: detal, frío y mayor', () => {
+  it('la unidad lleva un solo precio: el de venta', () => {
     const a = armarProducto(cerveza, CTX)
     const deBase = a.precios.filter((p) => p.presentacionId.endsWith('-base'))
-    expect(deBase.map((p) => p.listaId).sort()).toEqual(['lst-detal', 'lst-mayor'])
+    expect(deBase.map((p) => p.listaId)).toEqual(['lst-detal'])
   })
 
-  it('el precio de mayor de una cerveza baja 12% y arranca en 24', () => {
+  it('no genera precio de mayor automático', () => {
+    // Esas listas se activaban por cantidad acumulada, y el cierre del día
+    // lleva los escalones apagados porque su carrito es la jornada entera.
+    // Vender más barato por bulto se hace poniéndole precio a la caja.
     const a = armarProducto(cerveza, CTX)
-    const mayor = a.precios.find((p) => p.listaId === 'lst-mayor')!
-    expect(mayor.precio).toBe(0.88)
-  })
-
-  it('un licor usa el otro escalón: 8% desde 6 unidades', () => {
-    const ron: ProductoForm = { ...cerveza, categoriaId: 'cat-ron', precioDetal: 10, costo: 7 }
-    const a = armarProducto(ron, CTX)
-    const mayor = a.precios.find((p) => p.listaId === 'lst-mayor6')!
-    expect(mayor.precio).toBe(9.2)
-    expect(a.precios.some((p) => p.listaId === 'lst-mayor')).toBe(false)
+    expect(a.precios.some((p) => p.listaId.startsWith('lst-mayor'))).toBe(false)
   })
 
   it('el mismo precio en cualquier ubicación: el inventario es general', () => {
@@ -66,8 +60,9 @@ describe('armar un producto desde el formulario', () => {
 
     expect(precio('ubi-general', 1)?.precio).toBe(1.0)
     expect(precio('ubi-general', 1)?.listaNombre).toBe('Detal')
-    // El escalón por cantidad sigue en pie: es del producto, no del sitio.
-    expect(precio('ubi-general', 24)?.precio).toBe(0.88)
+    // Y sigue siendo el mismo llevando dos docenas: el descuento por bulto se
+    // hace con el precio de la caja, no con un escalón automático.
+    expect(precio('ubi-general', 24)?.precio).toBe(1.0)
   })
 
   it('ya no se generan códigos de barras', () => {
@@ -91,9 +86,16 @@ describe('armar un producto desde el formulario', () => {
     expect(armarProducto({ ...cerveza, stock: 0 }, CTX).existencias).toHaveLength(0)
   })
 
-  it('un producto exento no lleva IVA', () => {
-    const a = armarProducto({ ...cerveza, exento: true }, CTX)
-    expect(a.producto.iva).toBe(0)
+  it('los productos no llevan IVA: el negocio cobra el precio de la pizarra', () => {
+    expect(armarProducto(cerveza, CTX).producto.iva).toBe(0)
+  })
+
+  it('el costo NO se teclea, se conserva el que ya tenía', () => {
+    // Lo fija la recepción contra lo que se le pagó al proveedor. Si al editar
+    // se escribiera cero, el margen de ese producto se iría al 100%.
+    expect(armarProducto(cerveza, CTX).producto.costoPromedio).toBe(0.6)
+    const nuevo = armarProducto({ ...cerveza, costoPromedio: undefined }, CTX)
+    expect(nuevo.producto.costoPromedio).toBe(0)
   })
 
   it('el SKU sale del nombre corto, sin acentos ni signos', () => {
@@ -118,7 +120,7 @@ describe('ida y vuelta del formulario', () => {
 
     expect(vuelta.nombre).toBe(cerveza.nombre)
     expect(vuelta.precioDetal).toBe(1.0)
-    expect(vuelta.costo).toBe(0.6)
+    expect(vuelta.costoPromedio).toBe(0.6)
     expect(vuelta.stock).toBe(312)
     expect(vuelta.presentaciones).toEqual([{ nombre: 'Six-pack', factor: 6, precio: 5.7 }])
   })
@@ -134,15 +136,6 @@ describe('validación', () => {
     expect(malo.map((x) => x.campo).sort()).toEqual(['categoria', 'nombre', 'precioDetal'])
   })
 
-  it('avisa si el costo se come el precio', () => {
-    const malo = validarProducto({ ...cerveza, costo: 1.2 })
-    expect(malo[0]!.mensaje).toContain('pérdida')
-  })
-
-  it('avisa si el precio frío es menor que el de sala', () => {
-    const malo = validarProducto({ ...cerveza, costo: 1.5 })
-    expect(malo.some((x) => x.campo === 'costo')).toBe(true)
-  })
 
   it('una presentación de una sola unidad no tiene sentido', () => {
     const malo = validarProducto({ ...cerveza, presentaciones: [{ nombre: 'Pack', factor: 1, precio: 2 }] })
