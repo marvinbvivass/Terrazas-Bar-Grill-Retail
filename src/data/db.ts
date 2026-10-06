@@ -520,6 +520,32 @@ export async function guardarProducto(armado: {
   )
 }
 
+/**
+ * Guarda el orden en que aparecen los productos.
+ *
+ * Se escribe solo el campo `orden` y se encola cada producto para que suba. No
+ * se reescribe el producto entero: esto se toca arrastrando una lista, y un
+ * guardado completo por cada movimiento es pedir que una recarga a medias deje
+ * un producto con los demás campos de hace dos minutos.
+ */
+export async function guardarOrdenProductos(ids: UUID[]): Promise<void> {
+  await db.transaction('rw', [db.productos, db.outbox], async () => {
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i]!
+      const producto = await db.productos.get(id)
+      if (!producto) continue
+      await db.productos.put({ ...producto, orden: i })
+      await db.outbox.put({
+        id,
+        tipo: 'producto',
+        intentos: 0,
+        ultimoError: null,
+        creadaEn: Date.now(),
+      })
+    }
+  })
+}
+
 /** Da de baja un producto sin borrarlo: puede estar en ventas viejas */
 export async function desactivarProducto(productoId: UUID): Promise<void> {
   const p = await db.productos.get(productoId)

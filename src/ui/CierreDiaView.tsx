@@ -808,10 +808,16 @@ function FilaProducto({
         ) : (
           <button
             onClick={() => setAbierto(true)}
-            className="mt-1.5 text-[12px] font-semibold text-cobre2"
+            className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] font-semibold text-cobre2"
             style={{ minHeight: 0 }}
           >
-            + vendi {bultos.map((b) => b.nombre.toLowerCase()).join(' o ')}
+            {/* Con el precio a la vista: así se sabe que la caja va a otro
+                precio sin tener que desplegar nada. */}
+            {bultos.map((b) => (
+              <span key={b.id} className="rounded-full bg-cobre/10 px-2 py-0.5">
+                + {b.nombre} &times;{b.factor} · {formato(precioDe(b), 'USD')}
+              </span>
+            ))}
           </button>
         ))}
     </div>

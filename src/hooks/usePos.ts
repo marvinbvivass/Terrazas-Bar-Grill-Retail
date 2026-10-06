@@ -60,10 +60,12 @@ import {
   cargarMovimientoComercial,
   desactivarProducto as desactivarProductoDb,
   guardarProducto as guardarProductoDb,
+  guardarOrdenProductos,
   cargarSnapshot,
   cierreDelDia,
   cargarCierres,
   cargarDevoluciones,
+  cargarRecepciones,
   cargarTasasDia,
   cargarVacios,
   guardarTasaDia,
@@ -122,6 +124,8 @@ export function usePos() {
   const [cierreDia, setCierreDia] = useState<CierreDia | null>(null)
   /** Todas las tasas cargadas, de todos los días */
   const [tasasDia, setTasasDia] = useState<TasaDia[]>([])
+  /** Entradas de mercancía, para el historial de Recargar */
+  const [recepciones, setRecepciones] = useState<Recepcion[]>([])
   /** Devoluciones de cliente, para el cierre y para los saldos */
   const [devoluciones, setDevoluciones] = useState<Devolucion[]>([])
   /** Todos los movimientos de envases retornables */
@@ -175,13 +179,14 @@ export function usePos() {
     void (async () => {
       await pedirAlmacenamientoPersistente()
       await prepararConfiguracion()
-      const [s, comercial, envases, devs, cambios, actas, cola] = await Promise.all([
+      const [s, comercial, envases, devs, cambios, actas, entradas, cola] = await Promise.all([
         cargarSnapshot(),
         cargarMovimientoComercial(),
         cargarVacios(),
         cargarDevoluciones(),
         cargarTasasDia(),
         cargarCierres(),
+        cargarRecepciones(),
         pendientesDeSubir(),
       ])
       if (!vivo) return
@@ -193,6 +198,7 @@ export function usePos() {
       setDevoluciones(devs)
       setTasasDia(cambios)
       setCierres(actas)
+      setRecepciones(entradas)
       setPendientes(cola)
     })()
     return () => {
@@ -238,13 +244,14 @@ export function usePos() {
       const empuje = await empujarCola()
       await bajarSnapshot()
 
-      const [s2, comercial, envases, devs, cambios, actas, cola] = await Promise.all([
+      const [s2, comercial, envases, devs, cambios, actas, entradas, cola] = await Promise.all([
         cargarSnapshot(),
         cargarMovimientoComercial(),
         cargarVacios(),
         cargarDevoluciones(),
         cargarTasasDia(),
         cargarCierres(),
+        cargarRecepciones(),
         pendientesDeSubir(),
       ])
       setSnapshot(s2)
@@ -255,6 +262,7 @@ export function usePos() {
       setDevoluciones(devs)
       setTasasDia(cambios)
       setCierres(actas)
+      setRecepciones(entradas)
       setPendientes(cola)
       setUltimaSync(Date.now())
 
@@ -895,6 +903,7 @@ export function usePos() {
       })
 
       await registrarRecepcion(recepcion)
+      setRecepciones(await cargarRecepciones())
       await recargarCatalogo()
       setPendientes(await pendientesDeSubir())
       setAviso({
@@ -912,6 +921,16 @@ export function usePos() {
       await guardarProductoDb(armado)
       await recargarCatalogo()
       setAviso({ texto: `${armado.producto.nombreCorto} guardado`, tono: 'ok' })
+      void sincronizar(true)
+    },
+    [recargarCatalogo, sincronizar],
+  )
+
+  const ordenarProductos = useCallback(
+    async (ids: UUID[]) => {
+      await guardarOrdenProductos(ids)
+      await recargarCatalogo()
+      setAviso({ texto: 'Orden guardado', tono: 'ok' })
       void sincronizar(true)
     },
     [recargarCatalogo, sincronizar],
@@ -1041,11 +1060,13 @@ export function usePos() {
     registrar,
     anular,
     guardarProducto,
+    ordenarProductos,
     desactivarProducto,
     recargarCatalogo,
     cobrar,
     cerrarDia,
     recibirMercancia,
+    recepciones,
     registrarMerma,
     registrarConteo,
     devolver,

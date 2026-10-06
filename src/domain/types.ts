@@ -81,6 +81,14 @@ export interface Producto {
   fraccionable: boolean
   mlPorServicio?: number
   retornable: boolean
+  /**
+   * Dónde aparece en las listas.
+   *
+   * El orden alfabético no sirve en el mostrador: lo que más se vende tiene que
+   * estar arriba, y eso no lo sabe el sistema sino el encargado. Sin valor, el
+   * producto cae al final y se ordena por nombre.
+   */
+  orden?: number
   stockMin: number
   costoPromedio: number
   activo: boolean

@@ -3,12 +3,14 @@ import { HojaRecepcion } from './HojaRecepcion'
 import { HojaMerma } from './HojaMerma'
 import { HojaConteo } from './HojaConteo'
 import { HojaDevolucion } from './HojaDevolucion'
+import { OrdenarProductos } from './OrdenarProductos'
+import { textoCorto } from '../domain/dias'
 import { formato, redondear } from '../domain/money'
 import type { Pos } from '../hooks/usePos'
 import { UBICACION_VENTA_DEFECTO } from '../data/seed'
 import { Precio } from './moneda'
 
-type Orden = 'nombre' | 'menos' | 'valor'
+type Orden = 'mio' | 'nombre' | 'menos' | 'valor'
 
 /**
  * Inventario: qué hay, dónde, y por dónde entra.
@@ -28,6 +30,7 @@ export function InventarioView({ pos }: { pos: Pos }) {
   const [hoja, setHoja] = useState<'ninguna' | 'recibir' | 'merma' | 'conteo' | 'devolucion'>(
     'ninguna',
   )
+  const [parte, setParte] = useState<'ver' | 'recargar' | 'ordenar'>('ver')
   const s = pos.snapshot
 
   const filas = useMemo(() => {
@@ -53,6 +56,12 @@ export function InventarioView({ pos }: { pos: Pos }) {
       .sort((a, b) => {
         if (orden === 'menos') return a.total - b.total
         if (orden === 'valor') return b.valor - a.valor
+        // "Mi orden" es el que puso el encargado en la sub-función Ordenar.
+        if (orden === 'mio') {
+          const oa = a.producto.orden ?? Number.MAX_SAFE_INTEGER
+          const ob = b.producto.orden ?? Number.MAX_SAFE_INTEGER
+          if (oa !== ob) return oa - ob
+        }
         return a.producto.nombreCorto.localeCompare(b.producto.nombreCorto, 'es')
       })
   }, [s, pos, busqueda, orden])
@@ -73,6 +82,32 @@ export function InventarioView({ pos }: { pos: Pos }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      {/*
+        Tres sub-funciones y no una pantalla con botones sueltos. Ver, recargar
+        y ordenar son tres trabajos distintos: uno se hace a diario, otro cuando
+        llega el camión y el tercero casi nunca. Mezclarlos llenaba el pie de
+        botones que compiten entre sí.
+      */}
+      <div className="flex shrink-0 gap-1 border-b border-linea bg-panel px-3 py-2">
+        <SubFuncion activa={parte === 'ver'} onClick={() => setParte('ver')}>
+          Ver
+        </SubFuncion>
+        <SubFuncion activa={parte === 'recargar'} onClick={() => setParte('recargar')}>
+          Recargar
+        </SubFuncion>
+        <SubFuncion activa={parte === 'ordenar'} onClick={() => setParte('ordenar')}>
+          Ordenar
+        </SubFuncion>
+      </div>
+
+      {parte === 'ordenar' && <OrdenarProductos pos={pos} />}
+
+      {parte === 'recargar' && (
+        <Recargar pos={pos} onRecibir={() => setHoja('recibir')} />
+      )}
+
+      {parte === 'ver' && (
+        <>
       <div className="shrink-0 border-b border-linea bg-panel px-4 py-2.5">
         <div className="flex items-end justify-between gap-3">
           <div>
@@ -114,6 +149,9 @@ export function InventarioView({ pos }: { pos: Pos }) {
         </Chip>
         <Chip activo={orden === 'nombre'} onClick={() => setOrden('nombre')}>
           Nombre
+        </Chip>
+        <Chip activo={orden === 'mio'} onClick={() => setOrden('mio')}>
+          Mi orden
         </Chip>
       </div>
 
@@ -164,14 +202,10 @@ export function InventarioView({ pos }: { pos: Pos }) {
       </div>
 
       <div className="shrink-0 border-t border-linea bg-panel px-3 py-2.5">
-        <button
-          onClick={() => setHoja('recibir')}
-          disabled={s.productos.length === 0}
-          className="w-full rounded-xl bg-cobre py-3.5 text-[16px] font-bold text-fondo disabled:opacity-40"
-        >
-          + Recibir mercancía
-        </button>
-        <div className="grid grid-cols-3 gap-2 pt-2">
+        <p className="pb-1.5 font-mono text-[9.5px] tracking-[0.14em] text-apagado uppercase">
+          Corregir el inventario
+        </p>
+        <div className="grid grid-cols-3 gap-2">
           <button
             onClick={() => setHoja('conteo')}
             disabled={s.productos.length === 0}
@@ -195,6 +229,8 @@ export function InventarioView({ pos }: { pos: Pos }) {
           </button>
         </div>
       </div>
+        </>
+      )}
 
       {hoja === 'recibir' && <HojaRecepcion pos={pos} onCerrar={() => setHoja('ninguna')} />}
       {hoja === 'merma' && <HojaMerma pos={pos} onCerrar={() => setHoja('ninguna')} />}
@@ -223,5 +259,99 @@ function Chip({
     >
       {children}
     </button>
+  )
+}
+
+function SubFuncion({
+  activa,
+  onClick,
+  children,
+}: {
+  activa: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex-1 rounded-lg py-2 text-[14px] font-semibold ${
+        activa ? 'bg-cobre text-fondo' : 'bg-panel2 text-tinta2'
+      }`}
+    >
+      {children}
+    </button>
+  )
+}
+
+/**
+ * Recargar: la entrada de mercancía y lo que ya entró.
+ *
+ * El historial va aquí y no en una pantalla aparte porque la pregunta que lleva
+ * a mirarlo es siempre la misma —"¿esto ya lo cargué?"— y se hace justo antes
+ * de volver a cargarlo.
+ */
+function Recargar({ pos, onRecibir }: { pos: Pos; onRecibir: () => void }) {
+  const sinProductos = (pos.snapshot?.productos.length ?? 0) === 0
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="scroll-y min-h-0 flex-1 px-3 py-3">
+        <p className="pb-3 text-[13px] leading-relaxed text-apagado">
+          Cuando llega el camión. Se teclea como viene en la factura —tantas cajas a tanto la
+          caja— y el sistema calcula lo que cuesta cada unidad y actualiza el costo promedio.
+        </p>
+
+        {sinProductos && (
+          <p className="rounded-xl border border-linea bg-panel px-4 py-5 text-center text-[13.5px] leading-relaxed text-apagado">
+            Primero hacen falta productos en el catálogo.
+          </p>
+        )}
+
+        {pos.recepciones.length === 0 ? (
+          !sinProductos && (
+            <p className="rounded-xl border border-linea bg-panel px-4 py-5 text-center text-[13.5px] leading-relaxed text-apagado">
+              Todavía no has registrado ninguna entrada.
+            </p>
+          )
+        ) : (
+          <section className="overflow-hidden rounded-xl border border-linea bg-panel">
+            <h2 className="border-b border-linea px-3.5 py-2 font-mono text-[10px] tracking-[0.16em] text-apagado uppercase">
+              Últimas entradas
+            </h2>
+            <ul>
+              {pos.recepciones.slice(0, 20).map((r) => (
+                <li
+                  key={r.id}
+                  className="flex items-baseline justify-between gap-3 border-b border-linea px-3.5 py-2.5 last:border-b-0"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-[14px] font-semibold">
+                      {r.proveedor ?? 'Sin proveedor'}
+                    </p>
+                    <p className="truncate font-mono text-[10.5px] text-apagado">
+                      {textoCorto(r.dia)} · {r.unidades} u.
+                      {r.documento ? ` · ${r.documento}` : ''}
+                    </p>
+                  </div>
+                  <span className="tabular shrink-0 text-[15px] font-bold text-cobre2">
+                    {formato(r.total, 'USD')}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+      </div>
+
+      <div className="shrink-0 border-t border-linea bg-panel px-3 py-2.5">
+        <button
+          onClick={onRecibir}
+          disabled={sinProductos}
+          className="w-full rounded-xl bg-cobre py-3.5 text-[16px] font-bold text-fondo disabled:opacity-40"
+        >
+          + Recibir mercancía
+        </button>
+      </div>
+    </div>
   )
 }

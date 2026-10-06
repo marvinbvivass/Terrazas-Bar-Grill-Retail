@@ -344,11 +344,14 @@ function Editor({
               onCambio={(v) => alternar('Paquete', v, 6)}
             />
             {paquete && (
-              <FilaBulto
-                nombre="paquete"
-                pres={paquete}
-                onCambio={(campo, valor) => cambiarPres(indiceDe('Paquete'), campo, valor)}
-              />
+              <>
+                <FilaBulto
+                  nombre="paquete"
+                  pres={paquete}
+                  onCambio={(campo, valor) => cambiarPres(indiceDe('Paquete'), campo, valor)}
+                />
+                <PrecioPorUnidad pres={paquete} precioDetal={f.precioDetal} />
+              </>
             )}
 
             <CasillaVenta
@@ -358,11 +361,14 @@ function Editor({
               onCambio={(v) => alternar('Caja', v, 24)}
             />
             {caja && (
-              <FilaBulto
-                nombre="caja"
-                pres={caja}
-                onCambio={(campo, valor) => cambiarPres(indiceDe('Caja'), campo, valor)}
-              />
+              <>
+                <FilaBulto
+                  nombre="caja"
+                  pres={caja}
+                  onCambio={(campo, valor) => cambiarPres(indiceDe('Caja'), campo, valor)}
+                />
+                <PrecioPorUnidad pres={caja} precioDetal={f.precioDetal} />
+              </>
             )}
 
             <p className="pt-1 text-[12.5px] leading-relaxed text-apagado">
@@ -565,5 +571,37 @@ function FilaBulto({
         />
       </label>
     </div>
+  )
+}
+
+/**
+ * A cuánto sale la unidad comprando el bulto.
+ *
+ * Es la cuenta que de verdad importa y la que nadie hace a mano: la caja de 24
+ * a 20 dólares sale a 0,83 la botella, un 17% menos que al detal. Enseñarlo
+ * mientras se teclea evita el error clásico de ponerle a la caja el precio
+ * unitario multiplicado, que deja el mayoreo igual de caro que el detal.
+ */
+function PrecioPorUnidad({ pres, precioDetal }: { pres: PresentacionForm; precioDetal: number }) {
+  if (!(pres.factor > 0) || !(pres.precio > 0) || !(precioDetal > 0)) return null
+
+  const unitario = pres.precio / pres.factor
+  const diferencia = ((unitario - precioDetal) / precioDetal) * 100
+  const masCaro = diferencia > 0.5
+
+  return (
+    <p
+      className={`ml-8 pb-2 text-[12.5px] leading-relaxed ${masCaro ? 'text-ambar' : 'text-apagado'}`}
+    >
+      Sale a <b>{formato(unitario, 'USD')}</b> la unidad
+      {masCaro ? (
+        <>
+          {' '}— {diferencia.toFixed(0)}% MÁS caro que al detal. ¿Es el precio del bulto entero o
+          el de una unidad?
+        </>
+      ) : (
+        <> · {Math.abs(diferencia).toFixed(0)}% menos que al detal</>
+      )}
+    </p>
   )
 }
