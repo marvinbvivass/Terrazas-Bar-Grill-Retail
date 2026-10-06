@@ -61,6 +61,7 @@ import {
   desactivarProducto as desactivarProductoDb,
   guardarProducto as guardarProductoDb,
   guardarOrdenProductos,
+  actualizarPreciosEnLote,
   cargarSnapshot,
   cierreDelDia,
   cargarCierres,
@@ -937,6 +938,25 @@ export function usePos() {
     [recargarCatalogo, sincronizar],
   )
 
+  const cambiarPreciosEnLote = useCallback(
+    async (cambios: Array<{ id: UUID; precio: number; productoId: UUID }>) => {
+      if (cambios.length === 0) return 0
+      await actualizarPreciosEnLote(
+        cambios.map((c) => ({ id: c.id, precio: c.precio })),
+        cambios.map((c) => c.productoId),
+      )
+      await recargarCatalogo()
+      const productos = new Set(cambios.map((c) => c.productoId)).size
+      setAviso({
+        texto: `Precio cambiado en ${productos} ${productos === 1 ? 'producto' : 'productos'}`,
+        tono: 'ok',
+      })
+      void sincronizar(true)
+      return cambios.length
+    },
+    [recargarCatalogo, sincronizar],
+  )
+
   const ordenarProductos = useCallback(
     async (ids: UUID[]) => {
       await guardarOrdenProductos(ids)
@@ -1072,6 +1092,7 @@ export function usePos() {
     anular,
     guardarProducto,
     ordenarProductos,
+    cambiarPreciosEnLote,
     desactivarProducto,
     recargarCatalogo,
     cobrar,

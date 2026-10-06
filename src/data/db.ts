@@ -546,6 +546,39 @@ export async function guardarOrdenProductos(ids: UUID[]): Promise<void> {
   })
 }
 
+/**
+ * Reescribe varios precios de golpe.
+ *
+ * Toca solo las filas de precio y encola los productos afectados para que
+ * suban. No pasa por `guardarProducto`, que reescribe presentaciones y códigos
+ * enteros: para cambiarle el precio a ochenta productos eso serían ochenta
+ * reescrituras completas, y una recarga a medias dejaría alguno con el resto de
+ * sus datos a medio camino.
+ */
+export async function actualizarPreciosEnLote(
+  cambios: Array<{ id: UUID; precio: number }>,
+  productoIds: UUID[],
+): Promise<void> {
+  if (cambios.length === 0) return
+
+  await db.transaction('rw', [db.precios, db.outbox], async () => {
+    for (const c of cambios) {
+      const fila = await db.precios.get(c.id)
+      if (!fila) continue
+      await db.precios.put({ ...fila, precio: c.precio })
+    }
+    for (const id of new Set(productoIds)) {
+      await db.outbox.put({
+        id,
+        tipo: 'producto',
+        intentos: 0,
+        ultimoError: null,
+        creadaEn: Date.now(),
+      })
+    }
+  })
+}
+
 /** Da de baja un producto sin borrarlo: puede estar en ventas viejas */
 export async function desactivarProducto(productoId: UUID): Promise<void> {
   const p = await db.productos.get(productoId)

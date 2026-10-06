@@ -17,6 +17,7 @@ import {
   parsearMonto,
 } from '../domain/money'
 import { useMoneda } from './moneda'
+import { PreciosEnLote } from './PreciosEnLote'
 import { compararPorOrden } from '../domain/catalogo'
 import { CONTEXTO_CATALOGO, UBICACION_VENTA_DEFECTO } from '../data/seed'
 import { UNIDADES_CONTENIDO, type Producto, type UnidadContenido } from '../domain/types'
@@ -42,6 +43,7 @@ const VACIO: ProductoForm = {
  */
 export function CatalogoView({ pos }: { pos: Pos }) {
   const [editando, setEditando] = useState<ProductoForm | null>(null)
+  const [enLote, setEnLote] = useState(false)
   const [busqueda, setBusqueda] = useState('')
 
   const s = pos.snapshot
@@ -77,6 +79,8 @@ export function CatalogoView({ pos }: { pos: Pos }) {
     )
   }
 
+  if (enLote) return <PreciosEnLote pos={pos} onCerrar={() => setEnLote(false)} />
+
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto max-w-4xl px-6 py-6">
@@ -87,12 +91,22 @@ export function CatalogoView({ pos }: { pos: Pos }) {
               {productos.length === 0 ? 'Todavía no hay productos' : `${productos.length} producto${productos.length === 1 ? '' : 's'}`}
             </h1>
           </div>
-          <button
-            onClick={() => setEditando({ ...VACIO, categoriaId: s?.categorias[0]?.id ?? 'cat-cerveza' })}
-            className="rounded-lg bg-cobre px-5 py-2.5 text-[14px] font-bold text-fondo hover:bg-cobre2"
-          >
-            Producto nuevo
-          </button>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            {productos.length > 1 && (
+              <button
+                onClick={() => setEnLote(true)}
+                className="rounded-lg border border-linea2 px-4 py-2.5 text-[14px] font-semibold text-tinta2 hover:border-cobre hover:text-cobre2"
+              >
+                Precios en lote
+              </button>
+            )}
+            <button
+              onClick={() => setEditando({ ...VACIO, categoriaId: s?.categorias[0]?.id ?? 'cat-cerveza' })}
+              className="rounded-lg bg-cobre px-5 py-2.5 text-[14px] font-bold text-fondo hover:bg-cobre2"
+            >
+              Producto nuevo
+            </button>
+          </div>
         </header>
 
         {productos.length === 0 ? (
