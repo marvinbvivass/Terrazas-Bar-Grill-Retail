@@ -64,6 +64,12 @@ export function InventarioView({ pos }: { pos: Pos }) {
            * que se mira esta pantalla.
            */
           desglose: presentaciones.length > 1 ? desgloseCorto(total, presentaciones) : null,
+          // El mínimo se guarda en unidades; se enseña en el mismo lenguaje que
+          // el resto de la fila para poder compararlos de un vistazo.
+          minimo:
+            presentaciones.length > 1
+              ? desgloseCorto(p.stockMin, presentaciones)
+              : `${p.stockMin} u.`,
           valor: redondear(total * p.costoPromedio, 2),
           bajo: p.stockMin > 0 && total <= p.stockMin,
         }
@@ -207,7 +213,11 @@ export function InventarioView({ pos }: { pos: Pos }) {
                     </p>
                   )}
                   <p className="flex items-center gap-2 pt-0.5 font-mono text-[10.5px] text-apagado">
-                    {f.producto.stockMin > 0 && <span>mínimo {f.producto.stockMin}</span>}
+                    {f.producto.stockMin > 0 && (
+                      <span>
+                        mínimo {f.minimo}
+                      </span>
+                    )}
                     {f.producto.costoPromedio > 0 && (
                       <span>costo {formato(f.producto.costoPromedio, 'USD')}</span>
                     )}

@@ -197,6 +197,27 @@ function Editor({
   const paquete = presentaciones.find((p) => p.nombre === 'Paquete')
   const caja = presentaciones.find((p) => p.nombre === 'Caja')
 
+  /*
+   * En qué medida se expresa el aviso de poca existencia.
+   *
+   * `stockMin` se guarda SIEMPRE en unidades, que es como se compara contra el
+   * inventario. Esto es solo cómo se teclea: por defecto el bulto más grande,
+   * porque quien pide al proveedor piensa en cajas, no en botellas sueltas.
+   */
+  const bultoMayor = [...presentaciones].filter((x) => x.factor > 1).sort((a, b) => b.factor - a.factor)[0]
+  const [medidaMinimo, setMedidaMinimo] = useState<string>(() => {
+    if (!bultoMayor) return 'unidad'
+    // Al editar: si el mínimo es múltiplo exacto del bulto, se enseña en bultos.
+    const min = inicial.stockMin ?? 0
+    return min > 0 && min % bultoMayor.factor === 0 ? bultoMayor.nombre : 'unidad'
+  })
+
+  const factorMinimo =
+    medidaMinimo === 'unidad'
+      ? 1
+      : (presentaciones.find((x) => x.nombre === medidaMinimo)?.factor ?? 1)
+  const minimoEnMedida = factorMinimo > 0 ? Math.round((f.stockMin ?? 0) / factorMinimo) : 0
+
   function alternar(nombre: 'Paquete' | 'Caja', activa: boolean, porDefecto: number) {
     setF((x) => {
       const lista = [...(x.presentaciones ?? [])]
@@ -428,12 +449,54 @@ function Editor({
         {/* --- Aviso de existencia baja --- */}
         <Bloque titulo="Aviso de poca existencia" opcional>
           <Campo etiqueta="Avisarme desde" ayuda="Cuando el inventario baje de aquí">
-            <input
-              value={f.stockMin || ''}
-              onChange={(e) => set('stockMin', Number(e.target.value) || 0)}
-              inputMode="numeric"
-              className={`${entrada} text-right`}
-            />
+            {/*
+              El número no significa nada sin decir de QUÉ. Un "3" en un
+              producto que se vende por caja es ambiguo: tres botellas y tres
+              cajas se diferencian en setenta unidades. Se elige la medida al
+              lado, igual que en el contenido, y debajo se enseña a cuántas
+              unidades equivale, que es como se guarda y como se compara.
+            */}
+            <div className="mt-1 flex gap-2">
+              <input
+                value={minimoEnMedida || ''}
+                onChange={(e) => {
+                  const soloNumeros = e.target.value.replace(/[^\d]/g, '')
+                  const cantidad = soloNumeros === '' ? 0 : Number(soloNumeros)
+                  set('stockMin', cantidad * factorMinimo)
+                }}
+                inputMode="numeric"
+                placeholder="0"
+                className="min-w-0 flex-1 rounded-md border border-linea2 bg-panel2 px-3.5 py-2.5 text-right text-[14px] focus:border-cobre"
+              />
+              <select
+                value={medidaMinimo}
+                onChange={(e) => {
+                  // Se conserva la cantidad tecleada y se recalcula la base: si
+                  // puso 3 y cambia de unidades a cajas, quiere decir 3 cajas.
+                  const nueva = e.target.value
+                  const factor =
+                    nueva === 'unidad' ? 1 : (presentaciones.find((x) => x.nombre === nueva)?.factor ?? 1)
+                  setMedidaMinimo(nueva)
+                  set('stockMin', minimoEnMedida * factor)
+                }}
+                className="w-28 shrink-0 rounded-md border border-linea2 bg-panel2 px-2 py-2.5 text-[14px] focus:border-cobre"
+                aria-label="Medida del aviso"
+              >
+                <option value="unidad">unidades</option>
+                {presentaciones
+                  .filter((x) => x.factor > 1)
+                  .map((x) => (
+                    <option key={x.nombre} value={x.nombre}>
+                      {x.nombre.toLowerCase()}s
+                    </option>
+                  ))}
+              </select>
+            </div>
+            {(f.stockMin ?? 0) > 0 && factorMinimo > 1 && (
+              <p className="pt-1 text-[12.5px] text-apagado">
+                Son {f.stockMin} unidades en total.
+              </p>
+            )}
           </Campo>
           <div className="col-span-2 rounded-lg bg-panel2 px-3.5 py-2.5 text-[12.5px] leading-relaxed text-tinta2">
             Las cantidades no se tocan aquí. Un producto nuevo arranca en cero y sube cuando
