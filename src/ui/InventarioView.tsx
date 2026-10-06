@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { HojaRecepcion } from './HojaRecepcion'
+import { compararPorOrden } from '../domain/catalogo'
 import { HojaMerma } from './HojaMerma'
 import { HojaConteo } from './HojaConteo'
 import { HojaDevolucion } from './HojaDevolucion'
@@ -26,7 +27,9 @@ type Orden = 'mio' | 'nombre' | 'menos' | 'valor'
  */
 export function InventarioView({ pos }: { pos: Pos }) {
   const [busqueda, setBusqueda] = useState('')
-  const [orden, setOrden] = useState<Orden>('menos')
+  // Por defecto, el orden que puso el encargado: es el que conoce de memoria.
+  // Los otros criterios siguen a un toque para cuando busca otra cosa.
+  const [orden, setOrden] = useState<Orden>('mio')
   const [hoja, setHoja] = useState<'ninguna' | 'recibir' | 'merma' | 'conteo' | 'devolucion'>(
     'ninguna',
   )
@@ -57,11 +60,7 @@ export function InventarioView({ pos }: { pos: Pos }) {
         if (orden === 'menos') return a.total - b.total
         if (orden === 'valor') return b.valor - a.valor
         // "Mi orden" es el que puso el encargado en la sub-función Ordenar.
-        if (orden === 'mio') {
-          const oa = a.producto.orden ?? Number.MAX_SAFE_INTEGER
-          const ob = b.producto.orden ?? Number.MAX_SAFE_INTEGER
-          if (oa !== ob) return oa - ob
-        }
+        if (orden === 'mio') return compararPorOrden(a.producto, b.producto)
         return a.producto.nombreCorto.localeCompare(b.producto.nombreCorto, 'es')
       })
   }, [s, pos, busqueda, orden])
@@ -141,6 +140,9 @@ export function InventarioView({ pos }: { pos: Pos }) {
       </div>
 
       <div className="flex shrink-0 gap-1.5 px-3 py-2">
+        <Chip activo={orden === 'mio'} onClick={() => setOrden('mio')}>
+          Mi orden
+        </Chip>
         <Chip activo={orden === 'menos'} onClick={() => setOrden('menos')}>
           Menos primero
         </Chip>
@@ -149,9 +151,6 @@ export function InventarioView({ pos }: { pos: Pos }) {
         </Chip>
         <Chip activo={orden === 'nombre'} onClick={() => setOrden('nombre')}>
           Nombre
-        </Chip>
-        <Chip activo={orden === 'mio'} onClick={() => setOrden('mio')}>
-          Mi orden
         </Chip>
       </div>
 

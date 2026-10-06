@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { armarProducto, desarmarProducto, margen, validarProducto, type ContextoCatalogo, type ProductoForm } from './catalogo'
+import { armarProducto, compararPorOrden, desarmarProducto, margen, validarProducto, type ContextoCatalogo, type ProductoForm } from './catalogo'
 import { resolverPrecio } from './pricing'
 
 const CTX: ContextoCatalogo = {
@@ -165,5 +165,25 @@ describe('margen', () => {
 
   it('un precio en cero no revienta', () => {
     expect(margen(0, 5, 0.16)).toBe(0)
+  })
+})
+
+describe('el orden que pone el encargado', () => {
+  const p = (id: string, nombreCorto: string, orden?: number) =>
+    ({ ...armarProducto(cerveza, CTX).producto, id, nombreCorto, orden })
+
+  it('manda sobre el alfabético', () => {
+    const lista = [p('1', 'Zulia', 0), p('2', 'Agua', 1)]
+    expect([...lista].sort(compararPorOrden).map((x) => x.nombreCorto)).toEqual(['Zulia', 'Agua'])
+  })
+
+  it('lo que nunca se ordenó cae al final', () => {
+    const lista = [p('1', 'Agua'), p('2', 'Zulia', 0)]
+    expect([...lista].sort(compararPorOrden).map((x) => x.nombreCorto)).toEqual(['Zulia', 'Agua'])
+  })
+
+  it('entre los no ordenados manda el nombre, para que la lista no salte', () => {
+    const lista = [p('1', 'Zulia'), p('2', 'Agua')]
+    expect([...lista].sort(compararPorOrden).map((x) => x.nombreCorto)).toEqual(['Agua', 'Zulia'])
   })
 })

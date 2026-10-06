@@ -5,6 +5,7 @@ import {
   type MotivoDevolucion,
 } from '../domain/devolucion'
 import { formato, parsearMonto } from '../domain/money'
+import { compararPorOrden } from '../domain/catalogo'
 import type { UUID } from '../domain/types'
 import type { Pos } from '../hooks/usePos'
 import { Hoja } from './Hoja'
@@ -40,7 +41,7 @@ export function HojaDevolucion({ pos, onCerrar }: { pos: Pos; onCerrar: () => vo
     () =>
       (s?.productos ?? [])
         .slice()
-        .sort((a, b) => a.nombreCorto.localeCompare(b.nombreCorto, 'es')),
+        .sort(compararPorOrden),
     [s],
   )
 

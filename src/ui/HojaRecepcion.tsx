@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { formato, parsearMonto } from '../domain/money'
+import { compararPorOrden } from '../domain/catalogo'
 import type { EntradaLineaRecepcion } from '../domain/recepcion'
 import { productosConEnvase } from '../domain/vacios'
 import type { Presentacion, Producto, UUID } from '../domain/types'
@@ -39,7 +40,7 @@ export function HojaRecepcion({ pos, onCerrar }: { pos: Pos; onCerrar: () => voi
   const [guardando, setGuardando] = useState(false)
 
   const productos = useMemo(
-    () => (s?.productos ?? []).slice().sort((a, b) => a.nombreCorto.localeCompare(b.nombreCorto, 'es')),
+    () => (s?.productos ?? []).slice().sort(compararPorOrden),
     [s],
   )
 

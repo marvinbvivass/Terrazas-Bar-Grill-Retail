@@ -15,6 +15,7 @@ import { UBICACION_VENTA_DEFECTO } from '../data/seed'
 import type { Pos } from '../hooks/usePos'
 import { Precio } from './moneda'
 import { ActaCierre } from './ActaCierre'
+import { compararPorOrden } from '../domain/catalogo'
 import { productosConEnvase } from '../domain/vacios'
 
 const MONEDAS_COBRO: MonedaCodigo[] = ['USD', 'VES', 'COP']
@@ -153,10 +154,12 @@ export function CierreDiaView({ pos }: { pos: Pos }) {
           (p.marca ?? '').toLowerCase().includes(q),
       )
       .sort((a, b) => {
+        // Lo ya cargado sube, para poder repasarlo sin rebuscar.
         const ca = cantidadDe.get(a.id) ?? 0
         const cb = cantidadDe.get(b.id) ?? 0
         if (ca > 0 !== cb > 0) return cb - ca
-        return a.nombreCorto.localeCompare(b.nombreCorto, 'es')
+        // Y por debajo manda el orden que puso el encargado en Inventario.
+        return compararPorOrden(a, b)
       })
   }, [s, busqueda, soloCargados, cantidadDe])
 

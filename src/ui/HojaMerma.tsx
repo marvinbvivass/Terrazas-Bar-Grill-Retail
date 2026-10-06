@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { MOTIVOS_MERMA, type EntradaMerma, type MotivoMerma } from '../domain/ajuste'
 import { formato, parsearMonto } from '../domain/money'
+import { compararPorOrden } from '../domain/catalogo'
 import { UBICACION_VENTA_DEFECTO } from '../data/seed'
 import type { UUID } from '../domain/types'
 import type { Pos } from '../hooks/usePos'
@@ -34,7 +35,7 @@ export function HojaMerma({ pos, onCerrar }: { pos: Pos; onCerrar: () => void })
     return (s?.productos ?? [])
       .filter((p) => q === '' || p.nombreCorto.toLowerCase().includes(q))
       .slice()
-      .sort((a, b) => a.nombreCorto.localeCompare(b.nombreCorto, 'es'))
+      .sort(compararPorOrden)
   }, [s, busqueda])
 
   const entradas: EntradaMerma[] = useMemo(() => {

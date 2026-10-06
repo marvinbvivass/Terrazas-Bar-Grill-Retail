@@ -8,6 +8,7 @@ import {
   type ProductoForm,
 } from '../domain/catalogo'
 import { formato, parsearMonto } from '../domain/money'
+import { compararPorOrden } from '../domain/catalogo'
 import { CONTEXTO_CATALOGO, UBICACION_VENTA_DEFECTO } from '../data/seed'
 import { UNIDADES_CONTENIDO, type Producto, type UnidadContenido } from '../domain/types'
 import type { Pos } from '../hooks/usePos'
@@ -39,7 +40,7 @@ export function CatalogoView({ pos }: { pos: Pos }) {
     const q = busqueda.trim().toLowerCase()
     return (s?.productos ?? [])
       .filter((p) => q === '' || p.nombre.toLowerCase().includes(q) || p.nombreCorto.toLowerCase().includes(q))
-      .sort((a, b) => a.nombreCorto.localeCompare(b.nombreCorto))
+      .sort(compararPorOrden)
   }, [s, busqueda])
 
   function editar(p: Producto) {

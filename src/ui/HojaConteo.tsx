@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { resumirConteo, type EntradaConteo } from '../domain/ajuste'
 import { formato, parsearMonto } from '../domain/money'
+import { compararPorOrden } from '../domain/catalogo'
 import { UBICACION_VENTA_DEFECTO } from '../data/seed'
 import type { UUID } from '../domain/types'
 import type { Pos } from '../hooks/usePos'
@@ -43,7 +44,7 @@ export function HojaConteo({ pos, onCerrar }: { pos: Pos; onCerrar: () => void }
         }
       })
       .filter((f) => !soloDescuadrados || (f.diferencia !== null && f.diferencia !== 0))
-      .sort((a, b) => a.producto.nombreCorto.localeCompare(b.producto.nombreCorto, 'es'))
+      .sort((a, b) => compararPorOrden(a.producto, b.producto))
   }, [s, pos, busqueda, contados, soloDescuadrados])
 
   const entradas: EntradaConteo[] = useMemo(

@@ -274,3 +274,22 @@ export function margen(precioDetal: number, costo: number, iva: number): number 
   if (sinIva <= 0) return 0
   return redondear(((sinIva - costo) / sinIva) * 100, 1)
 }
+
+/**
+ * Compara dos productos por el orden que puso el encargado.
+ *
+ * Es el criterio de TODAS las listas de productos del sistema: el cierre, el
+ * inventario, el catálogo, la recepción, la merma, el conteo y la devolución.
+ * Que cada pantalla ordenara a su manera obligaba a buscar el mismo producto en
+ * un sitio distinto según dónde se estuviera, y el orden deja de servir en
+ * cuanto hay que volver a aprenderlo en cada pantalla.
+ *
+ * Lo que nunca se ordenó cae al final y entre esos manda el nombre, para que la
+ * lista no salte de sitio cada vez que se agrega un producto.
+ */
+export function compararPorOrden(a: Producto, b: Producto): number {
+  const oa = a.orden ?? Number.MAX_SAFE_INTEGER
+  const ob = b.orden ?? Number.MAX_SAFE_INTEGER
+  if (oa !== ob) return oa - ob
+  return a.nombreCorto.localeCompare(b.nombreCorto, 'es')
+}
