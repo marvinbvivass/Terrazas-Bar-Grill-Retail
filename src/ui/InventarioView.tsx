@@ -125,29 +125,25 @@ export function InventarioView({ pos }: { pos: Pos }) {
 
       {parte === 'ver' && (
         <>
-      <div className="shrink-0 border-b border-linea bg-panel px-4 py-2.5">
-        <div className="flex items-end justify-between gap-3">
-          <div>
-            <p className="font-mono text-[9.5px] tracking-[0.16em] text-apagado uppercase">
-              Valor del inventario, al costo
-            </p>
-            <p className="tabular text-[21px] leading-tight font-extrabold text-cobre2">
-              {formato(totales.valor, 'USD')}
-            </p>
-          </div>
-          <p className="tabular pb-1 text-right text-[12px] text-apagado">
-            {totales.unidades} unidades
-            {totales.bajos > 0 && (
-              <>
-                <br />
-                <span className="text-ambar">{totales.bajos} bajo mínimo</span>
-              </>
-            )}
-          </p>
-        </div>
+      {/*
+        Cabecera compacta: cuatro bloques apilados ocupaban media pantalla del
+        teléfono y dejaban ver tres productos. Las categorías y el orden pasan a
+        desplegables, que ocupan una línea tengan tres opciones o veinte.
+      */}
+      <div className="flex shrink-0 items-baseline justify-between gap-3 border-b border-linea bg-panel px-3 py-1.5">
+        <p className="truncate font-mono text-[10px] tracking-[0.14em] text-apagado uppercase">
+          Valor al costo
+          <span className="tabular pl-2 text-[14px] font-bold tracking-normal text-cobre2 normal-case">
+            {formato(totales.valor, 'USD')}
+          </span>
+        </p>
+        <p className="tabular shrink-0 text-right text-[11.5px] text-apagado">
+          {totales.unidades} u.
+          {totales.bajos > 0 && <span className="pl-2 text-ambar">{totales.bajos} bajo mín.</span>}
+        </p>
       </div>
 
-      <div className="shrink-0 px-3 pt-2.5">
+      <div className="shrink-0 px-3 pt-2">
         <input
           value={busqueda}
           onChange={(e) => setBusqueda(e.target.value)}
@@ -157,34 +153,34 @@ export function InventarioView({ pos }: { pos: Pos }) {
         />
       </div>
 
-      {s.categorias.length > 0 && (
-        <div className="shrink-0 overflow-x-auto px-3 pt-2">
-          <div className="flex gap-1.5">
-            <Chip activo={categoria === 'todas'} onClick={() => setCategoria('todas')}>
-              Todas
-            </Chip>
-            {s.categorias.map((c) => (
-              <Chip key={c.id} activo={categoria === c.id} onClick={() => setCategoria(c.id)}>
-                {c.nombre}
-              </Chip>
-            ))}
-          </div>
-        </div>
-      )}
+      <div className="flex shrink-0 gap-2 px-3 py-2">
+        <select
+          value={categoria}
+          onChange={(e) => setCategoria(e.target.value)}
+          className={`min-w-0 flex-1 rounded-xl border bg-panel2 px-2.5 py-2.5 text-[13.5px] ${
+            categoria === 'todas' ? 'border-linea text-tinta2' : 'border-cobre text-cobre2'
+          }`}
+          aria-label="Filtrar por categoría"
+        >
+          <option value="todas">Todas las categorías</option>
+          {s.categorias.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.nombre}
+            </option>
+          ))}
+        </select>
 
-      <div className="flex shrink-0 gap-1.5 overflow-x-auto px-3 py-2">
-        <Chip activo={orden === 'mio'} onClick={() => setOrden('mio')}>
-          Mi orden
-        </Chip>
-        <Chip activo={orden === 'menos'} onClick={() => setOrden('menos')}>
-          Menos primero
-        </Chip>
-        <Chip activo={orden === 'valor'} onClick={() => setOrden('valor')}>
-          Más valor
-        </Chip>
-        <Chip activo={orden === 'nombre'} onClick={() => setOrden('nombre')}>
-          Nombre
-        </Chip>
+        <select
+          value={orden}
+          onChange={(e) => setOrden(e.target.value as Orden)}
+          className="min-w-0 flex-1 rounded-xl border border-linea bg-panel2 px-2.5 py-2.5 text-[13.5px] text-tinta2"
+          aria-label="Ordenar por"
+        >
+          <option value="mio">Mi orden</option>
+          <option value="menos">Menos primero</option>
+          <option value="valor">Más valor</option>
+          <option value="nombre">Nombre</option>
+        </select>
       </div>
 
       <div className="scroll-y min-h-0 flex-1 px-3 pb-3">
@@ -280,28 +276,6 @@ export function InventarioView({ pos }: { pos: Pos }) {
       {hoja === 'conteo' && <HojaConteo pos={pos} onCerrar={() => setHoja('ninguna')} />}
       {hoja === 'devolucion' && <HojaDevolucion pos={pos} onCerrar={() => setHoja('ninguna')} />}
     </div>
-  )
-}
-
-function Chip({
-  activo,
-  onClick,
-  children,
-}: {
-  activo: boolean
-  onClick: () => void
-  children: React.ReactNode
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`rounded-full border px-3 py-1.5 text-[12.5px] whitespace-nowrap ${
-        activo ? 'border-cobre bg-cobre/15 text-cobre2' : 'border-linea text-tinta2'
-      }`}
-      style={{ minHeight: 0 }}
-    >
-      {children}
-    </button>
   )
 }
 

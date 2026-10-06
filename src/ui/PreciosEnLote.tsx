@@ -169,20 +169,23 @@ export function PreciosEnLote({ pos, onCerrar }: { pos: Pos; onCerrar: () => voi
         </button>
       </div>
 
-      {snap.categorias.length > 0 && (
-        <div className="shrink-0 overflow-x-auto px-3 pt-2">
-          <div className="flex gap-1.5">
-            <Pastilla activa={categoria === 'todas'} onClick={() => setCategoria('todas')}>
-              Todas
-            </Pastilla>
-            {snap.categorias.map((c) => (
-              <Pastilla key={c.id} activa={categoria === c.id} onClick={() => setCategoria(c.id)}>
-                {c.nombre}
-              </Pastilla>
-            ))}
-          </div>
-        </div>
-      )}
+      <div className="shrink-0 px-3 pt-2">
+        <select
+          value={categoria}
+          onChange={(e) => setCategoria(e.target.value)}
+          className={`w-full rounded-xl border bg-panel2 px-2.5 py-2.5 text-[13.5px] ${
+            categoria === 'todas' ? 'border-linea text-tinta2' : 'border-cobre text-cobre2'
+          }`}
+          aria-label="Filtrar por categoría"
+        >
+          <option value="todas">Todas las categorías</option>
+          {snap.categorias.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.nombre}
+            </option>
+          ))}
+        </select>
+      </div>
 
       <ul className="scroll-y mt-2 min-h-0 flex-1 px-3 pb-3">
         {productos.map((p) => {
@@ -270,28 +273,6 @@ function Modo({
       className={`flex-1 rounded-lg py-2 text-[13px] font-semibold ${
         activo ? 'bg-cobre text-fondo' : 'bg-panel2 text-tinta2'
       }`}
-    >
-      {children}
-    </button>
-  )
-}
-
-function Pastilla({
-  activa,
-  onClick,
-  children,
-}: {
-  activa: boolean
-  onClick: () => void
-  children: React.ReactNode
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`rounded-full border px-3 py-1.5 text-[12.5px] whitespace-nowrap ${
-        activa ? 'border-cobre bg-cobre/15 text-cobre2' : 'border-linea text-tinta2'
-      }`}
-      style={{ minHeight: 0 }}
     >
       {children}
     </button>
