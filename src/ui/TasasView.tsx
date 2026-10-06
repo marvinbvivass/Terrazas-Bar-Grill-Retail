@@ -166,6 +166,49 @@ export function TasasView({ pos }: { pos: Pos }) {
           la de un día posterior: eso reescribiría hacia atrás un cierre que ya se hizo.
         </p>
 
+        {/*
+          La moneda de trabajo vive aquí y no en un menú de ajustes: es la misma
+          pantalla donde se cargan las tasas que la hacen posible, así que quien
+          la cambia tiene delante si hay tasa para esa moneda o no.
+        */}
+        <section className="mt-4 overflow-hidden rounded-xl border border-linea bg-panel">
+          <h2 className="border-b border-linea px-3.5 py-2 font-mono text-[10px] tracking-[0.16em] text-apagado uppercase">
+            Moneda de trabajo
+          </h2>
+          <div className="px-3.5 py-3">
+            <p className="pb-2.5 text-[12.5px] leading-relaxed text-tinta2">
+              En esta moneda se ve y se teclea todo: precios, cierre, inventario y cuentas. Es del
+              local, no de este teléfono: se cambia aquí y cambia para todos.
+            </p>
+            <div className="flex gap-2">
+              {(['COP', 'VES', 'USD'] as MonedaCodigo[]).map((m) => {
+                const falta = m !== 'USD' && !((pos.snapshot?.tasas[m] ?? 0) > 0)
+                return (
+                  <button
+                    key={m}
+                    onClick={() => void pos.fijarMoneda(m)}
+                    disabled={falta}
+                    className={`flex-1 rounded-xl border py-2.5 text-[14px] font-bold disabled:opacity-35 ${
+                      pos.moneda === m
+                        ? 'border-cobre bg-cobre text-fondo'
+                        : 'border-linea2 text-tinta2'
+                    }`}
+                  >
+                    {MONEDAS[m].simbolo}
+                    <span className="block text-[10.5px] font-normal opacity-80">
+                      {MONEDAS[m].nombre}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+            <p className="pt-2 text-[12px] leading-relaxed text-apagado">
+              Una moneda sin tasa cargada no se puede elegir: no habría con qué convertir. El
+              dólar siempre está disponible porque es la moneda en la que se guarda todo.
+            </p>
+          </div>
+        </section>
+
         {/* Historial */}
         {historial.length > 0 && (
           <section className="mt-4 overflow-hidden rounded-xl border border-linea bg-panel">

@@ -66,6 +66,8 @@ import {
   cargarCierres,
   cargarDevoluciones,
   cargarRecepciones,
+  guardarMonedaPreferida,
+  monedaPreferida,
   cargarTasasDia,
   cargarVacios,
   guardarTasaDia,
@@ -122,6 +124,8 @@ export function usePos() {
   const [cierres, setCierres] = useState<CierreDia[]>([])
   /** El acta del día que se está mirando, si ya se cerró */
   const [cierreDia, setCierreDia] = useState<CierreDia | null>(null)
+  /** En qué moneda se mira y se teclea todo. Preferencia del local. */
+  const [moneda, setMonedaEstado] = useState<MonedaCodigo>('COP')
   /** Todas las tasas cargadas, de todos los días */
   const [tasasDia, setTasasDia] = useState<TasaDia[]>([])
   /** Entradas de mercancía, para el historial de Recargar */
@@ -152,6 +156,11 @@ export function usePos() {
    */
   const volverAHoy = useCallback(() => setDia(hoy()), [])
 
+  const fijarMoneda = useCallback(async (m: MonedaCodigo) => {
+    setMonedaEstado(m)
+    await guardarMonedaPreferida(m)
+  }, [])
+
   const bloqueadoPorCierre = useCallback(() => {
     if (!cierreDia) return false
     setAviso({
@@ -179,7 +188,7 @@ export function usePos() {
     void (async () => {
       await pedirAlmacenamientoPersistente()
       await prepararConfiguracion()
-      const [s, comercial, envases, devs, cambios, actas, entradas, cola] = await Promise.all([
+      const [s, comercial, envases, devs, cambios, actas, entradas, divisa, cola] = await Promise.all([
         cargarSnapshot(),
         cargarMovimientoComercial(),
         cargarVacios(),
@@ -187,6 +196,7 @@ export function usePos() {
         cargarTasasDia(),
         cargarCierres(),
         cargarRecepciones(),
+        monedaPreferida(),
         pendientesDeSubir(),
       ])
       if (!vivo) return
@@ -199,6 +209,7 @@ export function usePos() {
       setTasasDia(cambios)
       setCierres(actas)
       setRecepciones(entradas)
+      setMonedaEstado(divisa)
       setPendientes(cola)
     })()
     return () => {
@@ -1083,6 +1094,8 @@ export function usePos() {
     cierres,
     diaCerrado,
     volverAHoy,
+    moneda,
+    fijarMoneda,
     crearCliente,
     actualizarCliente,
     eliminarCliente,

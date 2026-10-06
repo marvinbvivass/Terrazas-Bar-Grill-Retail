@@ -77,7 +77,11 @@ function Aplicacion({ rol }: { rol: Rol }) {
   const puedeVerHistorial = rol === 'administrador'
 
   return (
-    <ProveedorMoneda tasas={pos.snapshot?.tasas ?? {}}>
+    <ProveedorMoneda
+      tasas={pos.snapshot?.tasas ?? {}}
+      inicial={pos.moneda}
+      onCambio={(m) => void pos.fijarMoneda(m)}
+    >
       {/*
         Solo el menú deja ver el telón de fondo. Las demás pantallas son listas
         y formularios: con una foto difuminada por debajo se leen peor, y lo que

@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
 import { HojaRecepcion } from './HojaRecepcion'
 import { compararPorOrden } from '../domain/catalogo'
+import { desgloseCorto } from '../domain/stock'
+import type { UUID } from '../domain/types'
 import { HojaMerma } from './HojaMerma'
 import { HojaConteo } from './HojaConteo'
 import { HojaDevolucion } from './HojaDevolucion'
@@ -34,12 +36,14 @@ export function InventarioView({ pos }: { pos: Pos }) {
     'ninguna',
   )
   const [parte, setParte] = useState<'ver' | 'recargar' | 'ordenar'>('ver')
+  const [categoria, setCategoria] = useState<UUID | 'todas'>('todas')
   const s = pos.snapshot
 
   const filas = useMemo(() => {
     if (!s) return []
     const q = busqueda.trim().toLowerCase()
     return s.productos
+      .filter((p) => categoria === 'todas' || p.categoriaId === categoria)
       .filter(
         (p) =>
           q === '' ||
@@ -49,9 +53,17 @@ export function InventarioView({ pos }: { pos: Pos }) {
       )
       .map((p) => {
         const total = pos.stockDe(p.id, UBICACION_VENTA_DEFECTO)
+        const presentaciones = s.presentacionesPorProducto.get(p.id) ?? []
         return {
           producto: p,
           total,
+          /*
+           * El almacén no cuenta en unidades sueltas: cuenta en cajas.
+           * "1078" no le dice nada a nadie; "29 cajas · 34 und" se compara de
+           * un vistazo con lo que hay apilado en el depósito, que es para lo
+           * que se mira esta pantalla.
+           */
+          desglose: presentaciones.length > 1 ? desgloseCorto(total, presentaciones) : null,
           valor: redondear(total * p.costoPromedio, 2),
           bajo: p.stockMin > 0 && total <= p.stockMin,
         }
@@ -63,7 +75,7 @@ export function InventarioView({ pos }: { pos: Pos }) {
         if (orden === 'mio') return compararPorOrden(a.producto, b.producto)
         return a.producto.nombreCorto.localeCompare(b.producto.nombreCorto, 'es')
       })
-  }, [s, pos, busqueda, orden])
+  }, [s, pos, busqueda, orden, categoria])
 
   const totales = useMemo(
     () => ({
@@ -139,7 +151,22 @@ export function InventarioView({ pos }: { pos: Pos }) {
         />
       </div>
 
-      <div className="flex shrink-0 gap-1.5 px-3 py-2">
+      {s.categorias.length > 0 && (
+        <div className="shrink-0 overflow-x-auto px-3 pt-2">
+          <div className="flex gap-1.5">
+            <Chip activo={categoria === 'todas'} onClick={() => setCategoria('todas')}>
+              Todas
+            </Chip>
+            {s.categorias.map((c) => (
+              <Chip key={c.id} activo={categoria === c.id} onClick={() => setCategoria(c.id)}>
+                {c.nombre}
+              </Chip>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="flex shrink-0 gap-1.5 overflow-x-auto px-3 py-2">
         <Chip activo={orden === 'mio'} onClick={() => setOrden('mio')}>
           Mi orden
         </Chip>
@@ -174,9 +201,16 @@ export function InventarioView({ pos }: { pos: Pos }) {
               >
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[14.5px] font-semibold">{f.producto.nombreCorto}</p>
+                  {f.desglose && (
+                    <p className="truncate pt-0.5 text-[12.5px] font-semibold text-cobre2">
+                      {f.desglose}
+                    </p>
+                  )}
                   <p className="flex items-center gap-2 pt-0.5 font-mono text-[10.5px] text-apagado">
                     {f.producto.stockMin > 0 && <span>mínimo {f.producto.stockMin}</span>}
-                    <span>costo {formato(f.producto.costoPromedio, 'USD')}</span>
+                    {f.producto.costoPromedio > 0 && (
+                      <span>costo {formato(f.producto.costoPromedio, 'USD')}</span>
+                    )}
                   </p>
                 </div>
                 <div className="shrink-0 text-right">

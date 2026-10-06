@@ -915,6 +915,23 @@ export async function guardarTasaDia(
 }
 
 /** Todas las tasas cargadas, para el historial y para resolver cualquier fecha */
+/**
+ * En qué moneda se mira y se teclea todo.
+ *
+ * Es una preferencia del local, no de cada aparato: si el dueño decide que se
+ * trabaja en pesos, se trabaja en pesos en el teléfono de la caja y en el suyo.
+ * Por eso vive en `config` y viaja con el resto, y no en el navegador.
+ */
+export async function guardarMonedaPreferida(moneda: MonedaCodigo): Promise<void> {
+  await db.config.put({ clave: 'monedaPreferida', valor: moneda })
+}
+
+export async function monedaPreferida(): Promise<MonedaCodigo> {
+  const fila = await db.config.get('monedaPreferida')
+  const valor = String(fila?.valor ?? 'COP')
+  return valor === 'USD' || valor === 'VES' || valor === 'COP' ? valor : 'COP'
+}
+
 export async function cargarTasasDia(): Promise<TasaDia[]> {
   return db.tasasDia.toArray()
 }

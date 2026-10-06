@@ -35,16 +35,41 @@ const MonedaCtx = createContext<Ctx | null>(null)
 
 export function ProveedorMoneda({
   tasas,
+  inicial,
+  onCambio,
   children,
 }: {
   tasas: Record<string, number>
+  /** La moneda guardada como preferencia del local */
+  inicial: MonedaCodigo
+  /** Para que rotar desde la barra también deje guardada la preferencia */
+  onCambio?: (m: MonedaCodigo) => void
   children: React.ReactNode
 }) {
-  const [moneda, setMoneda] = useState<MonedaCodigo>('USD')
+  const [moneda, setMoneda] = useState<MonedaCodigo>(inicial)
+
+  // La preferencia llega de la base unos milisegundos después de montar.
+  const [ultimaInicial, setUltimaInicial] = useState(inicial)
+  if (inicial !== ultimaInicial) {
+    setUltimaInicial(inicial)
+    setMoneda(inicial)
+  }
+
+  const cambiar = useCallback(
+    (m: MonedaCodigo) => {
+      setMoneda(m)
+      onCambio?.(m)
+    },
+    [onCambio],
+  )
 
   const rotar = useCallback(() => {
-    setMoneda((m) => ORDEN[(ORDEN.indexOf(m) + 1) % ORDEN.length] ?? 'USD')
-  }, [])
+    setMoneda((m) => {
+      const siguiente = ORDEN[(ORDEN.indexOf(m) + 1) % ORDEN.length] ?? 'USD'
+      onCambio?.(siguiente)
+      return siguiente
+    })
+  }, [onCambio])
 
   const valor = useMemo<Ctx>(() => {
     const tasa = moneda === 'USD' ? 1 : (tasas[moneda] ?? 0)
@@ -53,7 +78,7 @@ export function ProveedorMoneda({
     return {
       moneda,
       rotar,
-      fijar: setMoneda,
+      fijar: cambiar,
       aVista,
       texto: (base: number) => (sinTasa ? `${MONEDAS[moneda].simbolo} —` : formato(aVista(base), moneda)),
       tasas,
