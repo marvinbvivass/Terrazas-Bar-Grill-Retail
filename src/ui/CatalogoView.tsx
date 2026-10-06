@@ -275,21 +275,32 @@ function Editor({
           </Campo>
 
           <Campo etiqueta="Contenido" ayuda="Opcional. Lo que trae una unidad">
-            <div className="flex gap-2">
+            {/*
+              Los anchos van explícitos y NO se hereda `entrada`, que trae
+              `w-full`: dos `w-full` dentro de un flex pelean entre sí y el
+              campo salía aplastado o desbordado según cuál ganara en la hoja de
+              estilos.
+            */}
+            <div className="mt-1 flex gap-2">
               <input
                 value={f.contenido ?? ''}
-                onChange={(e) => set('contenido', Number(e.target.value) || undefined)}
+                onChange={(e) => {
+                  // Se queda solo con los dígitos. Antes se hacía
+                  // `Number(valor) || undefined`, así que al teclear una letra
+                  // el resultado era NaN y el campo se vaciaba solo mientras se
+                  // escribía.
+                  const soloNumeros = e.target.value.replace(/[^\d]/g, '')
+                  set('contenido', soloNumeros === '' ? undefined : Number(soloNumeros))
+                }}
                 inputMode="numeric"
                 placeholder="222"
-                className={`${entrada} flex-1 text-right`}
+                className="min-w-0 flex-1 rounded-md border border-linea2 bg-panel2 px-3.5 py-2.5 text-right text-[14px] focus:border-cobre"
               />
-              {/* La medida va al lado del número: una bolsa de maní no se mide
-                  en mililitros, y rellenar el campo con "500 ml" es un dato
-                  falso dentro del sistema. */}
               <select
                 value={f.unidadContenido ?? 'ml'}
                 onChange={(e) => set('unidadContenido', e.target.value as UnidadContenido)}
-                className={`${entrada} w-20`}
+                className="w-24 shrink-0 rounded-md border border-linea2 bg-panel2 px-2 py-2.5 text-[14px] focus:border-cobre"
+                aria-label="Medida del contenido"
               >
                 {UNIDADES_CONTENIDO.map((u) => (
                   <option key={u.id} value={u.id}>
@@ -301,21 +312,93 @@ function Editor({
           </Campo>
         </Bloque>
 
-        {/* --- Precio --- */}
-        <Bloque titulo="Precio de venta">
-          <Campo etiqueta="Precio de una unidad" ayuda="Tal como lo cobras en el mostrador">
-            <input
-              value={f.precioDetal || ''}
-              onChange={(e) => set('precioDetal', parsearMonto(e.target.value))}
-              inputMode="decimal"
-              placeholder="1,00"
-              className={`${entrada} text-right text-lg font-bold`}
-            />
-          </Campo>
+        {/* --- Cómo se vende --- */}
+        <Bloque titulo="Venta por">
+          <div className="col-span-2 flex flex-col gap-2">
+            <CasillaVenta activa titulo="Unidad" detalle="Siempre. Es la base del inventario" />
 
-          <Campo etiqueta="Maneja vacío" ayuda="Cerveza y refresco de casco">
+            <CasillaVenta
+              activa={!!paquete}
+              titulo="Paquete"
+              detalle={paquete ? `${paquete.factor} unidades` : 'Six-pack, bandeja, bolsa…'}
+              onCambio={(v) => alternar('Paquete', v, 6)}
+            />
+            {paquete && (
+              <>
+                <CuantasTrae
+                  nombre="paquete"
+                  pres={paquete}
+                  onCambio={(valor) => cambiarPres(indiceDe('Paquete'), 'factor', valor)}
+                />
+              </>
+            )}
+
+            <CasillaVenta
+              activa={!!caja}
+              titulo="Caja"
+              detalle={caja ? `${caja.factor} unidades` : 'Caja, gavera, bulto…'}
+              onCambio={(v) => alternar('Caja', v, 24)}
+            />
+            {caja && (
+              <>
+                <CuantasTrae
+                  nombre="caja"
+                  pres={caja}
+                  onCambio={(valor) => cambiarPres(indiceDe('Caja'), 'factor', valor)}
+                />
+              </>
+            )}
+
+            <p className="pt-1 text-[12.5px] leading-relaxed text-apagado">
+              Una caja no es otro producto: es la misma unidad contada de otra forma, y el
+              inventario sigue siendo uno solo. Al vender tres cajas salen del anaquel las unidades
+              que traen dentro.
+            </p>
+          </div>
+        </Bloque>
+
+        {/* --- Envase --- */}
+        <Bloque titulo="Maneja vacío">
+          <div className="col-span-2 flex items-center justify-between gap-3">
+            <p className="text-[13px] leading-relaxed text-apagado">
+              Marca sí en lo que lleva envase retornable: cerveza y refresco de casco. Es lo que
+              aparece en la pantalla de Vacíos.
+            </p>
             <Interruptor valor={f.retornable ?? false} onCambio={(v) => set('retornable', v)} />
-          </Campo>
+          </div>
+        </Bloque>
+
+        {/* --- Precio, según lo que se eligió arriba --- */}
+        <Bloque titulo="Precio de venta">
+          <div className="col-span-2 flex flex-col gap-3">
+            <PrecioDe
+              titulo="Una unidad"
+              valor={f.precioDetal}
+              onCambio={(v) => set('precioDetal', v)}
+            />
+
+            {paquete && (
+              <>
+                <PrecioDe
+                  titulo={`Un paquete de ${paquete.factor || '…'}`}
+                  valor={paquete.precio}
+                  onCambio={(v) => cambiarPres(indiceDe('Paquete'), 'precio', v)}
+                />
+                <PrecioPorUnidad pres={paquete} precioDetal={f.precioDetal} />
+              </>
+            )}
+
+            {caja && (
+              <>
+                <PrecioDe
+                  titulo={`Una caja de ${caja.factor || '…'}`}
+                  valor={caja.precio}
+                  onCambio={(v) => cambiarPres(indiceDe('Caja'), 'precio', v)}
+                />
+                <PrecioPorUnidad pres={caja} precioDetal={f.precioDetal} />
+              </>
+            )}
+          </div>
 
           {!esNuevo && (f.costoPromedio ?? 0) > 0 && (
             <p className="col-span-2 rounded-lg bg-panel2 px-3.5 py-2.5 text-[12.5px] leading-relaxed text-tinta2">
@@ -331,53 +414,6 @@ function Editor({
               la primera recepción el margen de este producto se verá como si fuera todo ganancia.
             </p>
           )}
-        </Bloque>
-
-        {/* --- Cómo se vende --- */}
-        <Bloque titulo="Venta por">
-          <div className="col-span-2 flex flex-col gap-2">
-            <CasillaVenta activa titulo="Unidad" detalle={`Siempre. ${formato(f.precioDetal, 'USD')} cada una`} />
-
-            <CasillaVenta
-              activa={!!paquete}
-              titulo="Paquete"
-              detalle={paquete ? `${paquete.factor} unidades` : 'Six-pack, bandeja, bolsa…'}
-              onCambio={(v) => alternar('Paquete', v, 6)}
-            />
-            {paquete && (
-              <>
-                <FilaBulto
-                  nombre="paquete"
-                  pres={paquete}
-                  onCambio={(campo, valor) => cambiarPres(indiceDe('Paquete'), campo, valor)}
-                />
-                <PrecioPorUnidad pres={paquete} precioDetal={f.precioDetal} />
-              </>
-            )}
-
-            <CasillaVenta
-              activa={!!caja}
-              titulo="Caja"
-              detalle={caja ? `${caja.factor} unidades` : 'Caja, gavera, bulto…'}
-              onCambio={(v) => alternar('Caja', v, 24)}
-            />
-            {caja && (
-              <>
-                <FilaBulto
-                  nombre="caja"
-                  pres={caja}
-                  onCambio={(campo, valor) => cambiarPres(indiceDe('Caja'), campo, valor)}
-                />
-                <PrecioPorUnidad pres={caja} precioDetal={f.precioDetal} />
-              </>
-            )}
-
-            <p className="pt-1 text-[12.5px] leading-relaxed text-apagado">
-              Una caja no es otro producto: es la misma unidad contada de otra forma, y el
-              inventario sigue siendo uno solo. Al vender tres cajas salen del anaquel las unidades
-              que traen dentro.
-            </p>
-          </div>
         </Bloque>
 
         {/* --- Aviso de existencia baja --- */}
@@ -537,41 +573,62 @@ function CasillaVenta({
   )
 }
 
-/** Cuántas trae y a cuánto se vende ese bulto */
-function FilaBulto({
+/** Cuántas unidades trae el bulto. El precio se pone más abajo, con los demás. */
+function CuantasTrae({
   nombre,
   pres,
   onCambio,
 }: {
   nombre: string
   pres: PresentacionForm
-  onCambio: (campo: keyof PresentacionForm, valor: string | number) => void
+  onCambio: (valor: number) => void
 }) {
   return (
-    <div className="ml-8 flex gap-2 pb-1">
-      <label className="flex-1">
-        <span className="mb-1 block font-mono text-[10px] tracking-[0.1em] text-apagado uppercase">
-          Unidades por {nombre}
-        </span>
+    <label className="ml-8 flex items-center gap-3 pb-1">
+      <span className="font-mono text-[10px] tracking-[0.1em] text-apagado uppercase">
+        Unidades por {nombre}
+      </span>
+      <input
+        value={pres.factor || ''}
+        onChange={(e) => onCambio(Number(e.target.value.replace(/[^\d]/g, '')) || 0)}
+        inputMode="numeric"
+        className="w-24 rounded-lg border border-linea bg-panel2 px-3 py-2.5 text-right font-bold"
+      />
+    </label>
+  )
+}
+
+/**
+ * Un precio por cada forma de venta elegida arriba.
+ *
+ * Van juntos y en el mismo sitio a propósito: puestos uno al lado del otro se
+ * ve de un golpe que la caja sale más barata que la unidad, que es la decisión
+ * que se está tomando. Repartidos entre bloques había que acordarse de lo que
+ * se puso dos pantallazos antes.
+ */
+function PrecioDe({
+  titulo,
+  valor,
+  onCambio,
+}: {
+  titulo: string
+  valor: number
+  onCambio: (valor: number) => void
+}) {
+  return (
+    <label className="flex items-center justify-between gap-3 rounded-lg border border-linea bg-panel2 px-3.5 py-2.5">
+      <span className="min-w-0 text-[14px] font-semibold">{titulo}</span>
+      <span className="flex shrink-0 items-center gap-1.5">
+        <span className="font-mono text-[12px] text-apagado">$</span>
         <input
-          value={pres.factor || ''}
-          onChange={(e) => onCambio('factor', Number(e.target.value) || 0)}
-          inputMode="numeric"
-          className="w-full rounded-lg border border-linea bg-panel2 px-3 py-2.5 text-right font-bold"
-        />
-      </label>
-      <label className="flex-1">
-        <span className="mb-1 block font-mono text-[10px] tracking-[0.1em] text-apagado uppercase">
-          Precio del {nombre}
-        </span>
-        <input
-          value={pres.precio || ''}
-          onChange={(e) => onCambio('precio', parsearMonto(e.target.value))}
+          value={valor || ''}
+          onChange={(e) => onCambio(parsearMonto(e.target.value))}
           inputMode="decimal"
-          className="w-full rounded-lg border border-linea bg-panel2 px-3 py-2.5 text-right font-bold"
+          placeholder="0,00"
+          className="w-28 rounded-md border border-linea2 bg-panel px-3 py-2 text-right text-[15px] font-bold focus:border-cobre"
         />
-      </label>
-    </div>
+      </span>
+    </label>
   )
 }
 
@@ -592,7 +649,7 @@ function PrecioPorUnidad({ pres, precioDetal }: { pres: PresentacionForm; precio
 
   return (
     <p
-      className={`ml-8 pb-2 text-[12.5px] leading-relaxed ${masCaro ? 'text-ambar' : 'text-apagado'}`}
+      className={`-mt-1 pl-1 text-[12.5px] leading-relaxed ${masCaro ? 'text-ambar' : 'text-apagado'}`}
     >
       Sale a <b>{formato(unitario, 'USD')}</b> la unidad
       {masCaro ? (
