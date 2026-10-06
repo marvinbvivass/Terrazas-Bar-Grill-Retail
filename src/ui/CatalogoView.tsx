@@ -7,7 +7,16 @@ import {
   type PresentacionForm,
   type ProductoForm,
 } from '../domain/catalogo'
-import { formato, parsearMonto } from '../domain/money'
+import {
+  DECIMALES_PRECIO,
+  MONEDAS,
+  aBase,
+  convertir,
+  formato,
+  formatoNumero,
+  parsearMonto,
+} from '../domain/money'
+import { useMoneda } from './moneda'
 import { compararPorOrden } from '../domain/catalogo'
 import { CONTEXTO_CATALOGO, UBICACION_VENTA_DEFECTO } from '../data/seed'
 import { UNIDADES_CONTENIDO, type Producto, type UnidadContenido } from '../domain/types'
@@ -606,6 +615,18 @@ function CuantasTrae({
  * que se está tomando. Repartidos entre bloques había que acordarse de lo que
  * se puso dos pantallazos antes.
  */
+/**
+ * Un precio por cada forma de venta elegida arriba.
+ *
+ * Se teclea EN LA MONEDA DE TRABAJO —pesos, bolívares o dólares— y se guarda en
+ * dólares con la tasa de hoy. El dólar es lo único estable: guardar el número
+ * en pesos obligaría a repasar el catálogo entero cada vez que se mueve el
+ * cambio.
+ *
+ * Mientras el campo está enfocado manda lo tecleado y no el valor convertido.
+ * Sin eso, teclear 5000 pesos devolvía 5002 un instante después —ida y vuelta
+ * por el dólar— y el número bailaba bajo el dedo.
+ */
 function PrecioDe({
   titulo,
   valor,
@@ -615,17 +636,36 @@ function PrecioDe({
   valor: number
   onCambio: (valor: number) => void
 }) {
+  const { moneda, tasas } = useMoneda()
+  const [texto, setTexto] = useState<string | null>(null)
+
+  const tasa = moneda === 'USD' ? 1 : (tasas[moneda] ?? 0)
+  const sinTasa = moneda !== 'USD' && tasa <= 0
+  const enVista = valor > 0 ? formatoNumero(convertir(valor, moneda, tasa), moneda) : ''
+
   return (
     <label className="flex items-center justify-between gap-3 rounded-lg border border-linea bg-panel2 px-3.5 py-2.5">
-      <span className="min-w-0 text-[14px] font-semibold">{titulo}</span>
+      <span className="min-w-0">
+        <span className="block text-[14px] font-semibold">{titulo}</span>
+        {moneda !== 'USD' && valor > 0 && !sinTasa && (
+          <span className="block font-mono text-[10.5px] text-apagado">
+            se guarda como {formato(valor, 'USD')}
+          </span>
+        )}
+      </span>
       <span className="flex shrink-0 items-center gap-1.5">
-        <span className="font-mono text-[12px] text-apagado">$</span>
+        <span className="font-mono text-[12px] text-apagado">{MONEDAS[moneda].simbolo}</span>
         <input
-          value={valor || ''}
-          onChange={(e) => onCambio(parsearMonto(e.target.value))}
+          value={texto ?? enVista}
+          onChange={(e) => {
+            setTexto(e.target.value)
+            onCambio(aBase(parsearMonto(e.target.value), moneda, tasa, DECIMALES_PRECIO))
+          }}
+          onBlur={() => setTexto(null)}
           inputMode="decimal"
-          placeholder="0,00"
-          className="w-28 rounded-md border border-linea2 bg-panel px-3 py-2 text-right text-[15px] font-bold focus:border-cobre"
+          placeholder="0"
+          disabled={sinTasa}
+          className="w-32 rounded-md border border-linea2 bg-panel px-3 py-2 text-right text-[15px] font-bold focus:border-cobre disabled:opacity-40"
         />
       </span>
     </label>
@@ -641,6 +681,7 @@ function PrecioDe({
  * unitario multiplicado, que deja el mayoreo igual de caro que el detal.
  */
 function PrecioPorUnidad({ pres, precioDetal }: { pres: PresentacionForm; precioDetal: number }) {
+  const { texto: enMoneda } = useMoneda()
   if (!(pres.factor > 0) || !(pres.precio > 0) || !(precioDetal > 0)) return null
 
   const unitario = pres.precio / pres.factor
@@ -651,7 +692,7 @@ function PrecioPorUnidad({ pres, precioDetal }: { pres: PresentacionForm; precio
     <p
       className={`-mt-1 pl-1 text-[12.5px] leading-relaxed ${masCaro ? 'text-ambar' : 'text-apagado'}`}
     >
-      Sale a <b>{formato(unitario, 'USD')}</b> la unidad
+      Sale a <b>{enMoneda(unitario)}</b> la unidad
       {masCaro ? (
         <>
           {' '}— {diferencia.toFixed(0)}% MÁS caro que al detal. ¿Es el precio del bulto entero o

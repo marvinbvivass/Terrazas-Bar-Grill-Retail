@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { aBase, convertir, formato, parsearMonto, redondear, redondearMoneda } from './money'
+import { DECIMALES_PRECIO, aBase, convertir, formato, parsearMonto, redondear, redondearMoneda } from './money'
 
 describe('redondear', () => {
   it('redondea medio-arriba sin romperse con la coma flotante', () => {
@@ -65,5 +65,34 @@ describe('parsearMonto', () => {
     expect(parsearMonto('Bs 456,25')).toBe(456.25)
     expect(parsearMonto('')).toBe(0)
     expect(parsearMonto('abc')).toBe(0)
+  })
+})
+
+describe('teclear el precio en otra moneda', () => {
+  const TASA_COP = 4100
+
+  it('con dos decimales el precio en pesos salta de 41 en 41', () => {
+    // Un céntimo de dólar vale 41 pesos. Esto es lo que NO se quiere.
+    const ida = aBase(5000, 'COP', TASA_COP)
+    expect(convertir(ida, 'COP', TASA_COP)).not.toBe(5000)
+  })
+
+  it('con la precisión de precio, 5.000 pesos vuelven como 5.000', () => {
+    const guardado = aBase(5000, 'COP', TASA_COP, DECIMALES_PRECIO)
+    expect(convertir(guardado, 'COP', TASA_COP)).toBe(5000)
+  })
+
+  it('aguanta precios grandes en bolívares', () => {
+    const guardado = aBase(36500, 'VES', 36.5, DECIMALES_PRECIO)
+    expect(guardado).toBe(1000)
+    expect(convertir(guardado, 'VES', 36.5)).toBe(36500)
+  })
+
+  it('sin tasa no inventa un precio', () => {
+    expect(aBase(5000, 'COP', 0, DECIMALES_PRECIO)).toBe(0)
+  })
+
+  it('en dólares no convierte nada', () => {
+    expect(aBase(1.25, 'USD', 1, DECIMALES_PRECIO)).toBe(1.25)
   })
 })

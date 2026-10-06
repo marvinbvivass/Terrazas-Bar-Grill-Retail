@@ -48,11 +48,29 @@ export function convertir(montoBase: number, moneda: MonedaCodigo, tasa: number)
 }
 
 /** Convierte de otra moneda a la moneda base */
-export function aBase(monto: number, moneda: MonedaCodigo, tasa: number): number {
-  if (moneda === MONEDA_BASE) return redondear(monto, 2)
+/**
+ * Convierte de otra moneda a la moneda base.
+ *
+ * `decimales` es 2 para dinero contado —lo que entra en la gaveta se redondea
+ * al céntimo— pero tiene que ser más para un PRECIO guardado. Con el peso a
+ * 4.100 por dólar, un céntimo vale 41 pesos: redondeando el precio a dos
+ * decimales, cualquier precio tecleado en pesos saltaría al múltiplo de 41 más
+ * cercano, y 5.000 se guardaría como 5.002. Con cuatro decimales el error baja
+ * a menos de medio peso.
+ */
+export function aBase(
+  monto: number,
+  moneda: MonedaCodigo,
+  tasa: number,
+  decimales = 2,
+): number {
+  if (moneda === MONEDA_BASE) return redondear(monto, decimales)
   if (tasa <= 0) return 0
-  return redondear(monto / tasa, 2)
+  return redondear(monto / tasa, decimales)
 }
+
+/** Los precios se guardan con más precisión que el dinero contado */
+export const DECIMALES_PRECIO = 4
 
 /** Formato para pantalla: $ 12,50 · Bs 456,25 · COL$ 48.000 */
 export function formato(monto: number, moneda: MonedaCodigo): string {

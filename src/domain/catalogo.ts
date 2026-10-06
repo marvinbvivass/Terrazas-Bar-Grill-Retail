@@ -1,4 +1,4 @@
-import { redondear } from './money'
+import { DECIMALES_PRECIO, redondear } from './money'
 import type {
   CodigoBarras,
   Precio,
@@ -159,7 +159,7 @@ export function armarProducto(form: ProductoForm, ctx: ContextoCatalogo): Produc
       id: `${baseId}-detal`,
       listaId: ctx.listaDetal,
       presentacionId: baseId,
-      precio: redondear(form.precioDetal, 2),
+      precio: redondear(form.precioDetal, DECIMALES_PRECIO),
       vigenteDesde: ahora,
       vigenteHasta: null,
     },
@@ -194,7 +194,7 @@ export function armarProducto(form: ProductoForm, ctx: ContextoCatalogo): Produc
       listaId: ctx.listaDetal,
       presentacionId: presId,
       // Si no le pusieron precio, se asume proporcional al de la unidad
-      precio: redondear(p.precio > 0 ? p.precio : form.precioDetal * p.factor, 2),
+      precio: redondear(p.precio > 0 ? p.precio : form.precioDetal * p.factor, DECIMALES_PRECIO),
       vigenteDesde: ahora,
       vigenteHasta: null,
     })
