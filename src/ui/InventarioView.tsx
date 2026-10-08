@@ -7,6 +7,7 @@ import { HojaMerma } from './HojaMerma'
 import { HojaConteo } from './HojaConteo'
 import { HojaDevolucion } from './HojaDevolucion'
 import { OrdenarProductos } from './OrdenarProductos'
+import { HistorialRecargas } from './HistorialRecargas'
 import { textoCorto } from '../domain/dias'
 import { formato, redondear } from '../domain/money'
 import type { Pos } from '../hooks/usePos'
@@ -309,6 +310,9 @@ function SubFuncion({
  */
 function Recargar({ pos, onRecibir }: { pos: Pos; onRecibir: () => void }) {
   const sinProductos = (pos.snapshot?.productos.length ?? 0) === 0
+  const [historial, setHistorial] = useState(false)
+
+  if (historial) return <HistorialRecargas pos={pos} onCerrar={() => setHistorial(false)} />
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -332,11 +336,20 @@ function Recargar({ pos, onRecibir }: { pos: Pos; onRecibir: () => void }) {
           )
         ) : (
           <section className="overflow-hidden rounded-xl border border-linea bg-panel">
-            <h2 className="border-b border-linea px-3.5 py-2 font-mono text-[10px] tracking-[0.16em] text-apagado uppercase">
-              Últimas entradas
-            </h2>
+            <div className="flex items-center justify-between gap-2 border-b border-linea px-3.5 py-1.5">
+              <h2 className="font-mono text-[10px] tracking-[0.16em] text-apagado uppercase">
+                Últimas entradas
+              </h2>
+              <button
+                onClick={() => setHistorial(true)}
+                className="shrink-0 text-[12.5px] font-semibold text-cobre2"
+                style={{ minHeight: 0 }}
+              >
+                Ver historial
+              </button>
+            </div>
             <ul>
-              {pos.recepciones.slice(0, 20).map((r) => (
+              {pos.recepciones.slice(0, 6).map((r) => (
                 <li
                   key={r.id}
                   className="flex items-baseline justify-between gap-3 border-b border-linea px-3.5 py-2.5 last:border-b-0"

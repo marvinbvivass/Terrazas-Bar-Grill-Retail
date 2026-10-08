@@ -842,7 +842,14 @@ export async function cargarAjustes(limite = 50): Promise<AjusteInventario[]> {
   return db.ajustes.orderBy('fecha').reverse().limit(limite).toArray()
 }
 
-export async function cargarRecepciones(limite = 50): Promise<Recepcion[]> {
+/**
+ * Las entradas de mercancía, de la más nueva a la más vieja.
+ *
+ * El tope es alto porque la pantalla de historial filtra sobre lo que hay en
+ * memoria: con cincuenta, buscar un proveedor de hace tres meses no encontraba
+ * nada y parecía que la entrada se había perdido.
+ */
+export async function cargarRecepciones(limite = 400): Promise<Recepcion[]> {
   return db.recepciones.orderBy('fecha').reverse().limit(limite).toArray()
 }
 
