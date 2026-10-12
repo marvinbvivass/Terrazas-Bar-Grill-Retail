@@ -652,6 +652,17 @@ export async function desactivarProducto(productoId: UUID): Promise<void> {
   })
 }
 
+/**
+ * Los asientos de kardex a partir de una fecha.
+ *
+ * Se piden por rango y no se guardan en memoria con todo lo demas: son el
+ * registro que mas crece de todos, y la unica pantalla que los necesita es la
+ * de la semana, que se abre de vez en cuando.
+ */
+export async function cargarMovimientosDesde(desde: number): Promise<MovimientoInventario[]> {
+  return db.movimientos.where('fecha').aboveOrEqual(desde).toArray()
+}
+
 /** Ventas y cobros que necesita la vista de crédito y la de cierre */
 export async function cargarMovimientoComercial(): Promise<{ ventas: Venta[]; abonos: Abono[]; clientes: Cliente[] }> {
   const [ventas, abonos, clientes] = await Promise.all([

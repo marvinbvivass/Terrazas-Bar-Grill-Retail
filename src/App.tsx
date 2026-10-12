@@ -5,6 +5,7 @@ import { Login } from './ui/Login'
 import { BarraSuperior } from './ui/BarraSuperior'
 import { Inicio, type Vista } from './ui/Inicio'
 import { CierrePantalla } from './ui/CierrePantalla'
+import { SemanaView } from './ui/SemanaView'
 import { ClientesCrudView } from './ui/ClientesCrudView'
 import { ClientesView } from './ui/ClientesView'
 import { InventarioView } from './ui/InventarioView'
@@ -42,6 +43,7 @@ const TITULOS: Record<Vista, string> = {
   tasas: 'Tasas del día',
   cierre: 'Cierre del día',
   vacios: 'Vacíos',
+  semana: 'La semana',
   historial: 'Historial',
 }
 
@@ -112,6 +114,15 @@ function Aplicacion({ rol }: { rol: Rol }) {
           {vista === 'cxc' && <ClientesView pos={pos} />}
           {vista === 'inventario' && <InventarioView pos={pos} />}
           {vista === 'vacios' && <VaciosView pos={pos} />}
+          {vista === 'semana' && (
+            <SemanaView
+              pos={pos}
+              onIrAlDia={(dia) => {
+                pos.setDia(dia)
+                setVista('cierre')
+              }}
+            />
+          )}
           {vista === 'tasas' && <TasasView pos={pos} />}
           {vista === 'catalogo' && <CatalogoView pos={pos} />}
           {vista === 'historial' &&
