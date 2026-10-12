@@ -21,7 +21,7 @@ import { PreciosEnLote } from './PreciosEnLote'
 import { HojaCategorias } from './HojaCategorias'
 import { compararPorOrden } from '../domain/catalogo'
 import { CONTEXTO_CATALOGO, UBICACION_VENTA_DEFECTO } from '../data/seed'
-import { UNIDADES_CONTENIDO, type Producto, type UnidadContenido } from '../domain/types'
+import { UNIDADES_CONTENIDO, type Producto, type UnidadContenido, type UUID } from '../domain/types'
 import type { Pos } from '../hooks/usePos'
 
 const VACIO: ProductoForm = {
@@ -46,14 +46,23 @@ export function CatalogoView({ pos }: { pos: Pos }) {
   const [editando, setEditando] = useState<ProductoForm | null>(null)
   const [enLote, setEnLote] = useState(false)
   const [busqueda, setBusqueda] = useState('')
+  const [categoria, setCategoria] = useState<UUID | 'todas'>('todas')
 
   const s = pos.snapshot
+  /*
+   * El catálogo entero y lo que se está viendo son dos cosas distintas.
+   *
+   * Confundirlas hacía que, al filtrar y no encontrar nada, saliera el texto
+   * de bienvenida diciendo que el sistema arranca vacío — delante de alguien
+   * que tiene cuarenta productos cargados.
+   */
+  const todos = useMemo(() => (s?.productos ?? []).slice().sort(compararPorOrden), [s])
   const productos = useMemo(() => {
     const q = busqueda.trim().toLowerCase()
-    return (s?.productos ?? [])
+    return todos
+      .filter((p) => categoria === 'todas' || p.categoriaId === categoria)
       .filter((p) => q === '' || p.nombre.toLowerCase().includes(q) || p.nombreCorto.toLowerCase().includes(q))
-      .sort(compararPorOrden)
-  }, [s, busqueda])
+  }, [todos, busqueda, categoria])
 
   function editar(p: Producto) {
     if (!s) return
@@ -89,11 +98,16 @@ export function CatalogoView({ pos }: { pos: Pos }) {
           <div>
             <p className="font-mono text-[10px] tracking-[0.16em] text-apagado uppercase">Catálogo</p>
             <h1 className="text-2xl font-bold">
-              {productos.length === 0 ? 'Todavía no hay productos' : `${productos.length} producto${productos.length === 1 ? '' : 's'}`}
+              {todos.length === 0
+                ? 'Todavía no hay productos'
+                : `${productos.length} producto${productos.length === 1 ? '' : 's'}`}
             </h1>
+            {todos.length > productos.length && (
+              <p className="pt-0.5 text-[12.5px] text-apagado">de {todos.length} en total</p>
+            )}
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
-            {productos.length > 1 && (
+            {todos.length > 1 && (
               <button
                 onClick={() => setEnLote(true)}
                 className="rounded-lg border border-linea2 px-4 py-2.5 text-[14px] font-semibold text-tinta2 hover:border-cobre hover:text-cobre2"
@@ -110,7 +124,7 @@ export function CatalogoView({ pos }: { pos: Pos }) {
           </div>
         </header>
 
-        {productos.length === 0 ? (
+        {todos.length === 0 ? (
           <div className="rounded-xl border border-linea bg-panel px-6 py-10">
             <p className="text-[15px] text-tinta2">
               El sistema arranca vacío a propósito: no hay productos de mentira que después haya
@@ -118,63 +132,86 @@ export function CatalogoView({ pos }: { pos: Pos }) {
             </p>
             <p className="mt-3 text-[14px] text-apagado">
               Carga los primeros con <strong className="text-tinta2">Producto nuevo</strong>. Solo
-              hacen falta el nombre, la categoría, el precio de una unidad y lo que te cuesta a ti.
-              Todo lo demás —las presentaciones, el precio de mayor, el código de barras— se puede
-              agregar después sin rehacer nada.
+              hacen falta el nombre, la categoría y el precio de una unidad. Lo demás —el
+              paquete, la caja, su precio aparte— se puede agregar después sin rehacer nada.
             </p>
           </div>
         ) : (
           <>
-            <input
-              value={busqueda}
-              onChange={(e) => setBusqueda(e.target.value)}
-              placeholder="Buscar…"
-              className="mb-3 w-full rounded-md border border-linea bg-panel px-3.5 py-2.5 placeholder:text-apagado focus:border-cobre"
-            />
-            <ul className="divide-y divide-linea overflow-hidden rounded-xl border border-linea bg-panel">
-              {productos.map((p) => {
-                const pres = s?.presentacionesPorProducto.get(p.id) ?? []
-                const base = pres.find((x) => x.esBase)
-                const precio = base
-                  ? s?.precios.find((x) => x.presentacionId === base.id && x.listaId === 'lst-detal')?.precio
-                  : undefined
-                const existencia = pos.stockDe(p.id, UBICACION_VENTA_DEFECTO)
-                // El costo ya no se captura en ningún lado: solo lo tienen los
-                // productos que pasaron por una recepción vieja. Sin costo no
-                // hay margen que enseñar, y un 100% sería mentira.
-                const m = precio && p.costoPromedio > 0 ? margen(precio, p.costoPromedio, p.iva) : null
+            <div className="mb-3 flex gap-2">
+              <input
+                value={busqueda}
+                onChange={(e) => setBusqueda(e.target.value)}
+                placeholder="Buscar…"
+                className="min-w-0 flex-1 rounded-md border border-linea bg-panel px-3.5 py-2.5 placeholder:text-apagado focus:border-cobre"
+              />
+              <select
+                value={categoria}
+                onChange={(e) => setCategoria(e.target.value)}
+                className={`w-48 shrink-0 rounded-md border bg-panel px-3 py-2.5 text-[14px] ${
+                  categoria === 'todas' ? 'border-linea text-tinta2' : 'border-cobre text-cobre2'
+                }`}
+                aria-label="Filtrar por categoría"
+              >
+                <option value="todas">Todas las categorías</option>
+                {s?.categorias.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.nombre}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-                return (
-                  <li key={p.id}>
-                    <button
-                      onClick={() => editar(p)}
-                      className="flex w-full items-center gap-4 px-4 py-3 text-left hover:bg-panel2"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-[14.5px] font-semibold">{p.nombreCorto}</p>
-                        <p className="truncate font-mono text-[10.5px] text-apagado">
-                          {p.nombre}
-                          {pres.length > 1 && ` · ${pres.length} presentaciones`}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="tabular text-[14px] font-bold text-cobre2">
-                          {precio !== undefined ? formato(precio, 'USD') : '—'}
-                        </p>
-                        {m !== null && (
-                          <p className="tabular font-mono text-[10px] text-apagado">
-                            margen {m}%
+            {productos.length === 0 ? (
+              <p className="rounded-xl border border-linea bg-panel px-6 py-10 text-center text-[14px] text-apagado">
+                Ningún producto coincide con lo que buscas.
+              </p>
+            ) : (
+              <ul className="divide-y divide-linea overflow-hidden rounded-xl border border-linea bg-panel">
+                {productos.map((p) => {
+                  const pres = s?.presentacionesPorProducto.get(p.id) ?? []
+                  const base = pres.find((x) => x.esBase)
+                  const precio = base
+                    ? s?.precios.find((x) => x.presentacionId === base.id && x.listaId === 'lst-detal')?.precio
+                    : undefined
+                  const existencia = pos.stockDe(p.id, UBICACION_VENTA_DEFECTO)
+                  // El costo ya no se captura en ningún lado: solo lo tienen los
+                  // productos que pasaron por una recepción vieja. Sin costo no
+                  // hay margen que enseñar, y un 100% sería mentira.
+                  const m = precio && p.costoPromedio > 0 ? margen(precio, p.costoPromedio, p.iva) : null
+
+                  return (
+                    <li key={p.id}>
+                      <button
+                        onClick={() => editar(p)}
+                        className="flex w-full items-center gap-4 px-4 py-3 text-left hover:bg-panel2"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-[14.5px] font-semibold">{p.nombreCorto}</p>
+                          <p className="truncate font-mono text-[10.5px] text-apagado">
+                            {p.nombre}
+                            {pres.length > 1 && ` · ${pres.length} presentaciones`}
                           </p>
-                        )}
-                      </div>
-                      <div className="w-24 text-right">
-                        <p className="tabular text-[13px]">{existencia} und</p>
-                      </div>
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
+                        </div>
+                        <div className="text-right">
+                          <p className="tabular text-[14px] font-bold text-cobre2">
+                            {precio !== undefined ? formato(precio, 'USD') : '—'}
+                          </p>
+                          {m !== null && (
+                            <p className="tabular font-mono text-[10px] text-apagado">
+                              margen {m}%
+                            </p>
+                          )}
+                        </div>
+                        <div className="w-24 text-right">
+                          <p className="tabular text-[13px]">{existencia} und</p>
+                        </div>
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
           </>
         )}
       </div>
