@@ -54,11 +54,13 @@ import { construirAbono, resumirClientes, saldoDeCliente, ventasAbiertas, type P
 import { hoy, inicioDe } from '../domain/dias'
 import { formato } from '../domain/money'
 import { tasasVigentes, type TasaDia } from '../domain/tasas'
-import type { Abono, Cliente, DiaNegocio, MonedaCodigo, Pago, Presentacion, Producto, UUID, Venta } from '../domain/types'
+import type { Abono, Categoria, Cliente, DiaNegocio, MonedaCodigo, Pago, Presentacion, Producto, UUID, Venta } from '../domain/types'
 import {
   anularVenta,
   cargarMovimientoComercial,
   desactivarProducto as desactivarProductoDb,
+  eliminarCategoria as eliminarCategoriaDb,
+  guardarCategoria as guardarCategoriaDb,
   guardarProducto as guardarProductoDb,
   guardarOrdenProductos,
   actualizarPreciosEnLote,
@@ -938,6 +940,32 @@ export function usePos() {
     [recargarCatalogo, sincronizar],
   )
 
+  const guardarCategoria = useCallback(
+    async (categoria: Categoria) => {
+      await guardarCategoriaDb(categoria)
+      await recargarCatalogo()
+      setAviso({ texto: `Categoría ${categoria.nombre} guardada`, tono: 'ok' })
+      void sincronizar(true)
+    },
+    [recargarCatalogo, sincronizar],
+  )
+
+  /**
+   * Borrar una categoría puede no poder hacerse, y hay que poder explicarlo:
+   * devuelve cuántos productos la están usando para decirlo en pantalla.
+   */
+  const eliminarCategoria = useCallback(
+    async (categoriaId: UUID) => {
+      const r = await eliminarCategoriaDb(categoriaId)
+      if (!r.ok) return r
+      await recargarCatalogo()
+      setAviso({ texto: 'Categoría eliminada', tono: 'ok' })
+      void sincronizar(true)
+      return r
+    },
+    [recargarCatalogo, sincronizar],
+  )
+
   const cambiarPreciosEnLote = useCallback(
     async (cambios: Array<{ id: UUID; precio: number; productoId: UUID }>) => {
       if (cambios.length === 0) return 0
@@ -1091,6 +1119,8 @@ export function usePos() {
     registrar,
     anular,
     guardarProducto,
+    guardarCategoria,
+    eliminarCategoria,
     ordenarProductos,
     cambiarPreciosEnLote,
     desactivarProducto,

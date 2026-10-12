@@ -18,6 +18,7 @@ import {
 } from '../domain/money'
 import { useMoneda } from './moneda'
 import { PreciosEnLote } from './PreciosEnLote'
+import { HojaCategorias } from './HojaCategorias'
 import { compararPorOrden } from '../domain/catalogo'
 import { CONTEXTO_CATALOGO, UBICACION_VENTA_DEFECTO } from '../data/seed'
 import { UNIDADES_CONTENIDO, type Producto, type UnidadContenido } from '../domain/types'
@@ -194,6 +195,7 @@ function Editor({
 }) {
   const [f, setF] = useState<ProductoForm>(inicial)
   const [guardando, setGuardando] = useState(false)
+  const [categorias, setCategorias] = useState(false)
   const esNuevo = !inicial.id
 
   const problemas = validarProducto(f)
@@ -309,17 +311,41 @@ function Editor({
             />
           </Campo>
 
-          <Campo etiqueta="Categoría">
-            <select
-              value={f.categoriaId}
-              onChange={(e) => set('categoriaId', e.target.value)}
-              className={entrada}
-            >
-              {pos.snapshot?.categorias.map((c) => (
-                <option key={c.id} value={c.id}>{c.nombre}</option>
-              ))}
-            </select>
-          </Campo>
+          {/*
+            La categoría se edita desde aquí y no desde una pantalla aparte.
+            La falta se descubre justo en este momento —se va a cargar la
+            hamburguesa y no hay dónde ponerla—, y mandar al encargado a buscar
+            otro menú con el producto a medio escribir termina con todo metido
+            en "Snacks".
+          */}
+          <div className="block">
+            <span className={etiqueta}>Categoría</span>
+            <div className="mt-1 flex gap-2">
+              <select
+                value={f.categoriaId}
+                onChange={(e) => set('categoriaId', e.target.value)}
+                className="min-w-0 flex-1 rounded-md border border-linea2 bg-panel2 px-3.5 py-2.5 text-[14px] focus:border-cobre"
+                aria-label="Categoría"
+              >
+                {pos.snapshot?.categorias.map((c) => (
+                  <option key={c.id} value={c.id}>{c.nombre}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => setCategorias(true)}
+                className="shrink-0 rounded-md border border-linea2 px-3 text-[13px] font-semibold text-cobre2"
+                style={{ minHeight: 0 }}
+              >
+                Editar
+              </button>
+            </div>
+            {(pos.snapshot?.categorias.length ?? 0) === 0 && (
+              <span className="mt-1 block text-[11.5px] text-ambar">
+                No queda ninguna categoría. Toca Editar y crea una.
+              </span>
+            )}
+          </div>
 
           <Campo etiqueta="Contenido" ayuda="Opcional. Lo que trae una unidad">
             {/*
@@ -548,6 +574,25 @@ function Editor({
           )}
         </div>
       </div>
+
+      {categorias && (
+        <HojaCategorias
+          pos={pos}
+          onCreada={(id) => set('categoriaId', id)}
+          onCerrar={() => {
+            setCategorias(false)
+            /*
+             * Si borraron la categoría que estaba elegida, el select se queda
+             * enseñando la primera de la lista mientras el formulario guarda
+             * una que ya no existe. Se reengancha a la primera que haya.
+             */
+            const vivas = pos.snapshot?.categorias ?? []
+            if (!vivas.some((c) => c.id === f.categoriaId)) {
+              set('categoriaId', vivas[0]?.id ?? '')
+            }
+          }}
+        />
+      )}
     </div>
   )
 }

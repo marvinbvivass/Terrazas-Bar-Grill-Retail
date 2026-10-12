@@ -20,7 +20,7 @@ import type { AjusteInventario } from '../domain/ajuste'
 import type { MovimientoVacios } from '../domain/vacios'
 import type { Devolucion } from '../domain/devolucion'
 import type { TasaDia } from '../domain/tasas'
-import type { Abono, Venta } from '../domain/types'
+import type { Abono, Categoria, Venta } from '../domain/types'
 import type { RespuestaSync, Transporte } from './sync'
 
 /**
@@ -175,6 +175,15 @@ async function bajarSnapshot(): Promise<void> {
   // trabajar. Productos no se inventa ninguno: los carga el encargado.
   await subirConfiguracionSiFalta()
 
+  /*
+   * Lo que todavia no ha subido no se puede perder.
+   *
+   * Si se crea una categoria sin senal y justo en ese momento baja el catalogo
+   * del servidor, el `clear` de mas abajo se la llevaria por delante y los
+   * productos recien creados quedarian apuntando a una categoria que no existe.
+   */
+  const categoriasEnCola = (await db.outbox.toArray()).filter((p) => p.tipo === 'categoria')
+
   if (productos.length === 0) {
     // Catálogo vacío arriba. No se borra el local, que puede tener productos
     // recién creados esperando en la cola.
@@ -194,6 +203,10 @@ async function bajarSnapshot(): Promise<void> {
         await db.codigos.bulkPut(codigos as never[])
         await db.categorias.clear()
         await db.categorias.bulkPut(categorias as never[])
+        for (const p of categoriasEnCola) {
+          if (p.categoria) await db.categorias.put(p.categoria)
+          else await db.categorias.delete(p.id)
+        }
         await db.listas.clear()
         await db.listas.bulkPut(listas as never[])
         await db.precios.clear()
@@ -252,6 +265,27 @@ async function bajarSnapshot(): Promise<void> {
  * de precio existen y con qué se cobra. No son datos del negocio, así que no
  * hay riesgo de "dato falso": son la estructura del mecanismo.
  */
+/**
+ * Altas, cambios de nombre y bajas de categoria.
+ *
+ * El borrado se manda tal cual y no como una marca: la categoria ya no existe
+ * abajo, y dejarla arriba haria que el proximo dispositivo en bajar el catalogo
+ * la reviviera.
+ */
+export async function subirCategorias(
+  entradas: Array<{ id: string; categoria: Categoria | null }>,
+): Promise<void> {
+  if (entradas.length === 0) return
+  const fs = fsdb()
+  const lote = writeBatch(fs)
+  for (const e of entradas) {
+    const ref = doc(fs, 'categorias', e.id)
+    if (e.categoria) lote.set(ref, limpiar(e.categoria))
+    else lote.delete(ref)
+  }
+  await lote.commit()
+}
+
 export async function subirConfiguracionSiFalta(): Promise<boolean> {
   const fs = fsdb()
   const marca = await getDoc(doc(fs, 'config', 'sistema'))
@@ -408,6 +442,9 @@ export const transporteFirestore: Transporte = {
   async subirCatalogo(productoIds) {
     await subirConfiguracionSiFalta()
     for (const id of productoIds) await subirProducto(id)
+  },
+  async subirCategorias(entradas) {
+    await subirCategorias(entradas)
   },
   async subirClientes(clienteIds) {
     for (const id of clienteIds) await subirCliente(id)

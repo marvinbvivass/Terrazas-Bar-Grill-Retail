@@ -54,6 +54,16 @@ export type Pendiente =
   // Para productos y clientes solo viaja el id: lo que se sube se lee de la
   // base local en el momento del envío, así siempre sube la última versión.
   | { id: UUID; tipo: 'producto'; intentos: number; ultimoError: string | null; creadaEn: number }
+  // La categoria viaja entera, y en `null` cuando se borro: la fila local ya
+  // no esta para releerla en el momento del envio.
+  | {
+      id: UUID
+      tipo: 'categoria'
+      categoria: Categoria | null
+      intentos: number
+      ultimoError: string | null
+      creadaEn: number
+    }
   | { id: UUID; tipo: 'cliente'; intentos: number; ultimoError: string | null; creadaEn: number }
   // El acta del día viaja entera: sus montos y tasas son de ese día y no se
   // pueden releer de la base más tarde sin cambiar de valor.
@@ -577,6 +587,53 @@ export async function actualizarPreciosEnLote(
       })
     }
   })
+}
+
+/**
+ * Crea o renombra una categoria.
+ *
+ * Se encola entera porque al borrarla no habra fila que releer, y la cola tiene
+ * que poder subir el borrado igual que el alta.
+ */
+export async function guardarCategoria(categoria: Categoria): Promise<void> {
+  await db.transaction('rw', [db.categorias, db.outbox], async () => {
+    await db.categorias.put(categoria)
+    await db.outbox.put({
+      id: categoria.id,
+      tipo: 'categoria',
+      categoria,
+      intentos: 0,
+      ultimoError: null,
+      creadaEn: Date.now(),
+    })
+  })
+}
+
+/**
+ * Borra una categoria, si no la usa nadie.
+ *
+ * El guardia mira la tabla de productos y no el snapshot, que solo trae los
+ * activos: un producto dado de baja sigue teniendo su categoria escrita, y si
+ * alguien lo reactiva tiene que encontrarla donde estaba.
+ */
+export async function eliminarCategoria(
+  categoriaId: UUID,
+): Promise<{ ok: boolean; productos: number }> {
+  const usan = await db.productos.where('categoriaId').equals(categoriaId).count()
+  if (usan > 0) return { ok: false, productos: usan }
+
+  await db.transaction('rw', [db.categorias, db.outbox], async () => {
+    await db.categorias.delete(categoriaId)
+    await db.outbox.put({
+      id: categoriaId,
+      tipo: 'categoria',
+      categoria: null,
+      intentos: 0,
+      ultimoError: null,
+      creadaEn: Date.now(),
+    })
+  })
+  return { ok: true, productos: 0 }
 }
 
 /** Da de baja un producto sin borrarlo: puede estar en ventas viejas */

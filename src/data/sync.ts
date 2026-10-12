@@ -5,7 +5,7 @@ import type { AjusteInventario } from '../domain/ajuste'
 import type { MovimientoVacios } from '../domain/vacios'
 import type { Devolucion } from '../domain/devolucion'
 import type { TasaDia } from '../domain/tasas'
-import type { Abono, Venta } from '../domain/types'
+import type { Abono, Categoria, Venta } from '../domain/types'
 
 /**
  * Sincronización.
@@ -33,6 +33,8 @@ export interface Transporte {
   subirAbonos(abonos: Abono[]): Promise<RespuestaSync[]>
   /** Sube productos creados o editados en la caja, con todo lo suyo. */
   subirCatalogo(productoIds: string[]): Promise<void>
+  /** Sube altas, cambios de nombre y bajas de categoría. `null` es una baja. */
+  subirCategorias(entradas: Array<{ id: string; categoria: Categoria | null }>): Promise<void>
   /** Sube clientes de fiado creados en la caja. */
   subirClientes(clienteIds: string[]): Promise<void>
   /** Sube las actas de cierre. Idempotente por `cierre.id`, que es el día. */
@@ -66,6 +68,9 @@ export const transporteLocal: Transporte = {
     return []
   },
   async subirCatalogo() {
+    /* sin backend todavía */
+  },
+  async subirCategorias() {
     /* sin backend todavía */
   },
   async subirClientes() {
@@ -112,6 +117,7 @@ export async function empujarCola(limite = 50): Promise<ResultadoEmpuje> {
 
   const ventas = pendientes.filter((p) => p.tipo === 'venta').map((p) => p.venta)
   const abonos = pendientes.filter((p) => p.tipo === 'abono').map((p) => p.abono)
+  const categorias = pendientes.filter((p) => p.tipo === 'categoria')
   const productos = pendientes.filter((p) => p.tipo === 'producto')
   const clientes = pendientes.filter((p) => p.tipo === 'cliente')
   const cierres = pendientes.filter((p) => p.tipo === 'cierre')
@@ -125,6 +131,17 @@ export async function empujarCola(limite = 50): Promise<ResultadoEmpuje> {
   let rechazadas = 0
 
   try {
+    // Las categorías van ANTES que los productos: un producto que menciona una
+    // categoría que el servidor no conoce sale sin clasificar en los informes,
+    // y el alta de la categoría puede estar justo detrás en esta misma cola.
+    if (categorias.length) {
+      await transporte.subirCategorias(
+        categorias.map((p) => ({ id: p.id, categoria: p.categoria })),
+      )
+      await db.outbox.bulkDelete(categorias.map((p) => p.id))
+      aceptadas += categorias.length
+    }
+
     // El catálogo va PRIMERO: una venta que menciona un producto que el
     // servidor todavía no conoce es una venta huérfana en los reportes.
     if (productos.length) {
