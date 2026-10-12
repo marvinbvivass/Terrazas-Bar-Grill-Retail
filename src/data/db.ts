@@ -694,6 +694,16 @@ export async function registrarRecepcion(recepcion: Recepcion): Promise<void> {
         const producto = await db.productos.get(productoId)
         if (!producto) continue
 
+        /*
+         * Sin costo en la entrada no hay nada que promediar.
+         *
+         * La pantalla de recibir dejo de pedir el costo, asi que esto solo
+         * corre con recepciones viejas. Promediar contra cero arrastraria a
+         * cero el costo que un producto ya tenia, y las salidas pasadas del
+         * kardex quedarian contadas contra un costo que nunca fue.
+         */
+        if (entrada.costoPromedioEntrada <= 0) continue
+
         // El stock ANTERIOR a esta entrada, sumando todas las ubicaciones: el
         // costo promedio es del producto, no de un anaquel.
         const todas = await db.existencias.where('productoId').equals(productoId).toArray()

@@ -50,6 +50,13 @@ export function HojaMerma({ pos, onCerrar }: { pos: Pos; onCerrar: () => void })
     return salida
   }, [renglones, s])
 
+  const unidadesPerdidas = entradas.reduce((x, e) => x + e.cantidad, 0)
+  /*
+   * Lo perdido en dinero solo sale si el producto tiene costo, y el costo dejo
+   * de capturarse al recibir mercancia. Cuando no lo hay, lo que importa es la
+   * cuenta de botellas: decir "se perdio $0,00" por seis botellas rotas es
+   * peor que no decir nada.
+   */
   const perdida = entradas.reduce((x, e) => x + e.cantidad * e.producto.costoPromedio, 0)
 
   if (!s) return null
@@ -73,12 +80,14 @@ export function HojaMerma({ pos, onCerrar }: { pos: Pos; onCerrar: () => void })
                 Se perdió
               </p>
               <p className="tabular text-[22px] leading-tight font-extrabold text-alerta">
-                {formato(perdida, 'USD')}
+                {unidadesPerdidas} {unidadesPerdidas === 1 ? 'unidad' : 'unidades'}
               </p>
             </div>
-            <p className="tabular pb-1 text-[12.5px] text-apagado">
-              {entradas.reduce((x, e) => x + e.cantidad, 0)} unidades
-            </p>
+            {perdida > 0 && (
+              <p className="tabular pb-1 text-[12.5px] text-apagado">
+                {formato(perdida, 'USD')}
+              </p>
+            )}
           </div>
           <button
             onClick={() => void guardar()}

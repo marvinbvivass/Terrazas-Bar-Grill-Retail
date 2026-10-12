@@ -138,8 +138,9 @@ export function CatalogoView({ pos }: { pos: Pos }) {
                   ? s?.precios.find((x) => x.presentacionId === base.id && x.listaId === 'lst-detal')?.precio
                   : undefined
                 const existencia = pos.stockDe(p.id, UBICACION_VENTA_DEFECTO)
-                // Sin recepciones el costo es cero y el margen saldría 100%:
-                // mejor no enseñar un número que miente.
+                // El costo ya no se captura en ningún lado: solo lo tienen los
+                // productos que pasaron por una recepción vieja. Sin costo no
+                // hay margen que enseñar, y un 100% sería mentira.
                 const m = precio && p.costoPromedio > 0 ? margen(precio, p.costoPromedio, p.iva) : null
 
                 return (
@@ -159,9 +160,11 @@ export function CatalogoView({ pos }: { pos: Pos }) {
                         <p className="tabular text-[14px] font-bold text-cobre2">
                           {precio !== undefined ? formato(precio, 'USD') : '—'}
                         </p>
-                        <p className="tabular font-mono text-[10px] text-apagado">
-                          {m === null ? 'sin costo aún' : `margen ${m}%`}
-                        </p>
+                        {m !== null && (
+                          <p className="tabular font-mono text-[10px] text-apagado">
+                            margen {m}%
+                          </p>
+                        )}
                       </div>
                       <div className="w-24 text-right">
                         <p className="tabular text-[13px]">{existencia} und</p>
@@ -446,16 +449,9 @@ function Editor({
 
           {!esNuevo && (f.costoPromedio ?? 0) > 0 && (
             <p className="col-span-2 rounded-lg bg-panel2 px-3.5 py-2.5 text-[12.5px] leading-relaxed text-tinta2">
-              Te cuesta <b>{formato(f.costoPromedio ?? 0, 'USD')}</b> la unidad, calculado con lo
-              que le has pagado al proveedor. Deja{' '}
+              Te cuesta <b>{formato(f.costoPromedio ?? 0, 'USD')}</b> la unidad, de cuando las
+              entradas se cargaban con costo. Deja{' '}
               <b>{margen(f.precioDetal, f.costoPromedio ?? 0, 0)}%</b> de margen.
-            </p>
-          )}
-
-          {(f.costoPromedio ?? 0) === 0 && (
-            <p className="col-span-2 rounded-lg bg-panel2 px-3.5 py-2.5 text-[12.5px] leading-relaxed text-apagado">
-              El costo no se escribe aquí: sale solo de las facturas, al recibir mercancía. Hasta
-              la primera recepción el margen de este producto se verá como si fuera todo ganancia.
             </p>
           )}
         </Bloque>

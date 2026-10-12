@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { HojaRecepcion } from './HojaRecepcion'
 import { compararPorOrden } from '../domain/catalogo'
 import { desgloseCorto } from '../domain/stock'
@@ -9,7 +9,7 @@ import { HojaDevolucion } from './HojaDevolucion'
 import { OrdenarProductos } from './OrdenarProductos'
 import { HistorialRecargas } from './HistorialRecargas'
 import { textoCorto } from '../domain/dias'
-import { formato, redondear } from '../domain/money'
+import { redondear } from '../domain/money'
 import type { Pos } from '../hooks/usePos'
 import { UBICACION_VENTA_DEFECTO } from '../data/seed'
 import { Precio } from './moneda'
@@ -39,6 +39,28 @@ export function InventarioView({ pos }: { pos: Pos }) {
   const [parte, setParte] = useState<'ver' | 'recargar' | 'ordenar'>('ver')
   const [categoria, setCategoria] = useState<UUID | 'todas'>('todas')
   const s = pos.snapshot
+
+  /*
+   * Lo que vale el inventario, a precio de venta.
+   *
+   * Antes se valoraba al costo, pero el costo entraba por la pantalla de
+   * recibir mercancia y esa pantalla dejo de pedirlo: la cifra habria quedado
+   * en cero para todo lo que entre de ahora en adelante. A precio de venta
+   * siempre hay con que calcularla, y de paso contesta mejor la pregunta que
+   * se hace mirando el deposito: cuanto dinero hay ahi apilado.
+   */
+  const precioDetalDe = useCallback(
+    (productoId: UUID): number => {
+      if (!s) return 0
+      const base = s.presentacionesPorProducto.get(productoId)?.find((p) => p.esBase)
+      if (!base) return 0
+      return (
+        s.precios.find((x) => x.presentacionId === base.id && x.listaId === 'lst-detal')?.precio ??
+        0
+      )
+    },
+    [s],
+  )
 
   const filas = useMemo(() => {
     if (!s) return []
@@ -71,7 +93,7 @@ export function InventarioView({ pos }: { pos: Pos }) {
             presentaciones.length > 1
               ? desgloseCorto(p.stockMin, presentaciones)
               : `${p.stockMin} u.`,
-          valor: redondear(total * p.costoPromedio, 2),
+          valor: redondear(total * precioDetalDe(p.id), 2),
           bajo: p.stockMin > 0 && total <= p.stockMin,
         }
       })
@@ -82,7 +104,7 @@ export function InventarioView({ pos }: { pos: Pos }) {
         if (orden === 'mio') return compararPorOrden(a.producto, b.producto)
         return a.producto.nombreCorto.localeCompare(b.producto.nombreCorto, 'es')
       })
-  }, [s, pos, busqueda, orden, categoria])
+  }, [s, pos, busqueda, orden, categoria, precioDetalDe])
 
   const totales = useMemo(
     () => ({
@@ -133,9 +155,9 @@ export function InventarioView({ pos }: { pos: Pos }) {
       */}
       <div className="flex shrink-0 items-baseline justify-between gap-3 border-b border-linea bg-panel px-3 py-1.5">
         <p className="truncate font-mono text-[10px] tracking-[0.14em] text-apagado uppercase">
-          Valor al costo
-          <span className="tabular pl-2 text-[14px] font-bold tracking-normal text-cobre2 normal-case">
-            {formato(totales.valor, 'USD')}
+          Valor de venta
+          <span className="pl-2 align-baseline tracking-normal normal-case">
+            <Precio base={totales.valor} className="text-[14px] font-bold text-cobre2" />
           </span>
         </p>
         <p className="tabular shrink-0 text-right text-[11.5px] text-apagado">
@@ -214,9 +236,6 @@ export function InventarioView({ pos }: { pos: Pos }) {
                       <span>
                         mínimo {f.minimo}
                       </span>
-                    )}
-                    {f.producto.costoPromedio > 0 && (
-                      <span>costo {formato(f.producto.costoPromedio, 'USD')}</span>
                     )}
                   </p>
                 </div>
@@ -318,8 +337,8 @@ function Recargar({ pos, onRecibir }: { pos: Pos; onRecibir: () => void }) {
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="scroll-y min-h-0 flex-1 px-3 py-3">
         <p className="pb-3 text-[13px] leading-relaxed text-apagado">
-          Cuando llega el camión. Se teclea como viene en la factura —tantas cajas a tanto la
-          caja— y el sistema calcula lo que cuesta cada unidad y actualiza el costo promedio.
+          Cuando llega el camión. Se teclea lo que bajó —tantas cajas de esto, tantos paquetes de
+          aquello— y el stock sube al instante.
         </p>
 
         {sinProductos && (
@@ -359,12 +378,12 @@ function Recargar({ pos, onRecibir }: { pos: Pos; onRecibir: () => void }) {
                       {r.proveedor ?? 'Sin proveedor'}
                     </p>
                     <p className="truncate font-mono text-[10.5px] text-apagado">
-                      {textoCorto(r.dia)} · {r.unidades} u.
-                      {r.documento ? ` · ${r.documento}` : ''}
+                      {textoCorto(r.dia)} · {r.lineas.length}{' '}
+                      {r.lineas.length === 1 ? 'renglón' : 'renglones'}
                     </p>
                   </div>
                   <span className="tabular shrink-0 text-[15px] font-bold text-cobre2">
-                    {formato(r.total, 'USD')}
+                    {r.unidades} u.
                   </span>
                 </li>
               ))}

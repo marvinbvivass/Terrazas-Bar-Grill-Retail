@@ -1,8 +1,7 @@
 import { useMemo, useState } from 'react'
-import { formato, parsearMonto } from '../domain/money'
+import { parsearMonto } from '../domain/money'
 import { compararPorOrden } from '../domain/catalogo'
 import type { EntradaLineaRecepcion } from '../domain/recepcion'
-import { productosConEnvase } from '../domain/vacios'
 import type { Presentacion, Producto, UUID } from '../domain/types'
 import { UBICACION_VENTA_DEFECTO } from '../data/seed'
 import type { Pos } from '../hooks/usePos'
@@ -13,73 +12,70 @@ interface Renglon {
   productoId: UUID
   presentacionId: UUID
   cantidad: string
-  /** Lo que costó UNA de esa presentación: una caja, un six-pack */
-  costo: string
   ubicacionId: UUID
 }
 
 /**
  * Recibir mercancía del proveedor.
  *
- * Se teclea como viene en la factura: tantas cajas de esto, a tanto la caja.
- * El costo se pide POR PRESENTACIÓN y no por unidad porque es lo que dice el
- * papel del proveedor; la división entre 36 la hace el sistema, que es donde no
- * se equivoca.
+ * Una sola pregunta: qué llegó y cuánto. Nada más.
  *
- * Al guardar sube el stock, queda el asiento de kardex y se recalcula el costo
- * promedio del producto. Antes esto se hacía sobrescribiendo la existencia en
- * el catálogo, sin dejar constancia de nada.
+ * Aquí se tecleaba también el número de factura, el costo de cada caja y los
+ * vacíos del despacho. Las tres cosas se fueron, y por razones distintas:
+ *
+ * - La factura es el papel del proveedor, y el papel ya existe. Teclear su
+ *   número no mueve una sola botella.
+ * - El costo alimentaba un margen que nadie mira. Era el campo que más tiempo
+ *   costaba y el primero que se dejaba en blanco cuando había prisa, que es la
+ *   peor combinación posible: trabajo cierto a cambio de un número dudoso.
+ * - Los vacíos del camión tienen su propia pantalla, donde se ven las dos
+ *   deudas juntas. Contarlos aquí obligaba a hacer dos trabajos a la vez justo
+ *   cuando el chofer está esperando.
+ *
+ * Al guardar sube el stock y queda el asiento de kardex. Eso es todo lo que
+ * esta pantalla promete y todo lo que hace.
  */
 export function HojaRecepcion({ pos, onCerrar }: { pos: Pos; onCerrar: () => void }) {
   const s = pos.snapshot
   const [proveedor, setProveedor] = useState('')
-  const [documento, setDocumento] = useState('')
   const [renglones, setRenglones] = useState<Renglon[]>([])
-  /** Envases: lo que el camion dejo debiendo y lo que se llevo del patio */
-  const [envases, setEnvases] = useState<Record<string, { dejados: string; devueltos: string }>>({})
+  const [categoria, setCategoria] = useState<UUID | 'todas'>('todas')
   const [guardando, setGuardando] = useState(false)
 
+  /*
+   * El filtro por categoría es para el camión que trae una sola cosa.
+   * Con sesenta productos en el catálogo, encontrar las cuatro cervezas entre
+   * refrescos y snacks es la parte lenta de recibir un despacho de cerveza.
+   */
   const productos = useMemo(
-    () => (s?.productos ?? []).slice().sort(compararPorOrden),
-    [s],
+    () =>
+      (s?.productos ?? [])
+        .filter((p) => categoria === 'todas' || p.categoriaId === categoria)
+        .slice()
+        .sort(compararPorOrden),
+    [s, categoria],
   )
 
   const preparados = useMemo(() => {
     if (!s) return []
-    const salida: Array<{ renglon: Renglon; entrada: EntradaLineaRecepcion; importe: number }> = []
+    const salida: Array<{ renglon: Renglon; entrada: EntradaLineaRecepcion }> = []
     for (const r of renglones) {
       const producto = s.productos.find((p) => p.id === r.productoId)
       const presentacion = s.presentacionesPorId.get(r.presentacionId)
       if (!producto || !presentacion) continue
       const cantidad = Math.max(0, Math.floor(parsearMonto(r.cantidad)))
-      const costoPorPresentacion = parsearMonto(r.costo)
       if (cantidad <= 0) continue
       salida.push({
         renglon: r,
-        entrada: { producto, presentacion, cantidad, costoPorPresentacion, ubicacionId: r.ubicacionId },
-        importe: cantidad * costoPorPresentacion,
+        entrada: { producto, presentacion, cantidad, ubicacionId: r.ubicacionId },
       })
     }
     return salida
   }, [renglones, s])
 
-  const total = preparados.reduce((x, p) => x + p.importe, 0)
   const unidades = preparados.reduce(
     (x, p) => x + p.entrada.cantidad * p.entrada.presentacion.factor,
     0,
-  )
-  const sinCosto = preparados.some((p) => p.entrada.costoPorPresentacion <= 0)
-
-  const conEnvase = useMemo(() => productosConEnvase(s?.productos ?? []), [s])
-
-  const movimientoEnvases = useMemo(
-    () =>
-      conEnvase.map((p) => ({
-        productoId: p.id,
-        dejados: Math.max(0, Math.floor(parsearMonto(envases[p.id]?.dejados ?? ''))),
-        devueltos: Math.max(0, Math.floor(parsearMonto(envases[p.id]?.devueltos ?? ''))),
-      })),
-    [conEnvase, envases],
   )
 
   if (!s) return null
@@ -101,7 +97,6 @@ export function HojaRecepcion({ pos, onCerrar }: { pos: Pos; onCerrar: () => voi
         // llega en cajas, y así el encargado teclea menos.
         presentacionId: presentacionesDe(producto.id).at(-1)?.id ?? base.id,
         cantidad: '',
-        costo: '',
         ubicacionId: UBICACION_VENTA_DEFECTO,
       },
     ])
@@ -113,26 +108,7 @@ export function HojaRecepcion({ pos, onCerrar }: { pos: Pos; onCerrar: () => voi
 
   async function guardar() {
     setGuardando(true)
-    const recepcion = await pos.recibirMercancia({
-      lineas: preparados.map((p) => p.entrada),
-      proveedor,
-      documento,
-    })
-
-    /*
-     * Los envases van en su propio documento, atado a la recepcion.
-     *
-     * No se meten dentro de la recepcion porque no son mercancia: la recepcion
-     * mueve stock y costo promedio, y un vacio no es ninguna de las dos cosas.
-     * Van despues para que la entrada quede registrada aunque esto falle.
-     */
-    if (movimientoEnvases.some((e) => e.dejados !== e.devueltos)) {
-      await pos.moverVaciosCompania(movimientoEnvases, {
-        documentoId: recepcion?.id ?? null,
-        nota: proveedor.trim() || null,
-      })
-    }
-
+    await pos.recibirMercancia({ lineas: preparados.map((p) => p.entrada), proveedor })
     setGuardando(false)
     onCerrar()
   }
@@ -146,13 +122,15 @@ export function HojaRecepcion({ pos, onCerrar }: { pos: Pos; onCerrar: () => voi
           <div className="flex items-end justify-between gap-3 pb-2">
             <div>
               <p className="font-mono text-[9.5px] tracking-[0.14em] text-apagado uppercase">
-                Le pagas al proveedor
+                Entra al inventario
               </p>
               <p className="tabular text-[22px] leading-tight font-extrabold">
-                {formato(total, 'USD')}
+                {unidades} {unidades === 1 ? 'unidad' : 'unidades'}
               </p>
             </div>
-            <p className="tabular pb-1 text-[12.5px] text-apagado">{unidades} unidades</p>
+            <p className="tabular pb-1 text-[12.5px] text-apagado">
+              {preparados.length} {preparados.length === 1 ? 'renglón' : 'renglones'}
+            </p>
           </div>
           <button
             onClick={() => void guardar()}
@@ -164,36 +142,25 @@ export function HojaRecepcion({ pos, onCerrar }: { pos: Pos; onCerrar: () => voi
         </>
       }
     >
-      <div className="flex gap-2 pb-3">
-        <input
-          value={proveedor}
-          onChange={(e) => setProveedor(e.target.value)}
-          placeholder="Proveedor (opcional)"
-          className="min-w-0 flex-1 rounded-xl border border-linea bg-panel2 px-3 py-2.5 placeholder:text-apagado"
-          aria-label="Proveedor"
-        />
-        <input
-          value={documento}
-          onChange={(e) => setDocumento(e.target.value)}
-          placeholder="Factura"
-          className="w-28 shrink-0 rounded-xl border border-linea bg-panel2 px-3 py-2.5 placeholder:text-apagado"
-          aria-label="Número de factura"
-        />
-      </div>
+      <input
+        value={proveedor}
+        onChange={(e) => setProveedor(e.target.value)}
+        placeholder="Proveedor (opcional)"
+        className="w-full rounded-xl border border-linea bg-panel2 px-3 py-2.5 placeholder:text-apagado"
+        aria-label="Proveedor"
+      />
 
       {renglones.length === 0 && (
-        <p className="rounded-xl border border-linea bg-panel2 px-4 py-4 text-center text-[13.5px] leading-relaxed text-tinta2">
-          Agrega abajo lo que llegó. Pon el costo tal como viene en la factura — por caja o por
-          six-pack — y el sistema calcula lo que cuesta cada unidad.
+        <p className="mt-3 rounded-xl border border-linea bg-panel2 px-4 py-4 text-center text-[13.5px] leading-relaxed text-tinta2">
+          Agrega abajo lo que llegó. Dices si vino en cajas, en paquetes o suelto, y cuántas.
         </p>
       )}
 
-      <div className="flex flex-col gap-2.5">
+      <div className="flex flex-col gap-2.5 pt-3">
         {renglones.map((r) => {
           const producto = snap.productos.find((p) => p.id === r.productoId)
           const presentacion = snap.presentacionesPorId.get(r.presentacionId)
           const cantidad = Math.max(0, Math.floor(parsearMonto(r.cantidad)))
-          const costo = parsearMonto(r.costo)
           const factor = presentacion?.factor ?? 1
           return (
             <div key={r.key} className="rounded-xl border border-linea bg-panel px-3 py-2.5">
@@ -230,26 +197,14 @@ export function HojaRecepcion({ pos, onCerrar }: { pos: Pos; onCerrar: () => voi
                   onChange={(e) => cambiar(r.key, { cantidad: e.target.value })}
                   inputMode="numeric"
                   placeholder="0"
-                  className="tabular w-16 rounded-lg border border-linea bg-panel2 py-2.5 text-center font-bold"
+                  className="tabular w-20 rounded-lg border border-linea bg-panel2 py-2.5 text-center text-[16px] font-bold"
                   aria-label="Cuántas"
                 />
-                <div className="flex w-24 items-center rounded-lg border border-linea bg-panel2 px-2">
-                  <span className="font-mono text-[11.5px] text-apagado">$</span>
-                  <input
-                    value={r.costo}
-                    onChange={(e) => cambiar(r.key, { costo: e.target.value })}
-                    inputMode="decimal"
-                    placeholder="0"
-                    className="tabular w-full bg-transparent py-2.5 text-right font-bold"
-                    aria-label="Costo por presentación"
-                  />
-                </div>
               </div>
 
-              {cantidad > 0 && (
+              {cantidad > 0 && factor > 1 && (
                 <p className="tabular pt-2 text-right text-[11.5px] text-apagado">
                   {cantidad * factor} u.
-                  {costo > 0 && ` · ${formato(costo / factor, 'USD')} c/u`}
                 </p>
               )}
             </div>
@@ -257,77 +212,33 @@ export function HojaRecepcion({ pos, onCerrar }: { pos: Pos; onCerrar: () => voi
         })}
       </div>
 
-      {sinCosto && (
-        <p className="mt-3 rounded-xl border border-ambar/50 bg-ambar/10 px-3 py-2.5 text-[12.5px] leading-relaxed text-ambar">
-          Hay renglones sin costo. Puedes guardarlos igual y el stock sube, pero el costo promedio
-          de ese producto bajará, y con él el margen que vas a ver en el cierre.
-        </p>
-      )}
-
-      {conEnvase.length > 0 && (
-        <div className="mt-4 rounded-xl border border-linea bg-panel2 px-3 py-3">
-          <p className="pb-0.5 font-mono text-[10px] tracking-[0.14em] text-apagado uppercase">
-            Vacíos de este despacho (en cajas)
-          </p>
-          <p className="pb-2.5 text-[12.5px] leading-relaxed text-tinta2">
-            <b>Dejó</b> son las cajas que vinieron llenas y vas a tener que devolver.
-            <b> Se llevó</b> son las cajas de vacíos que el camión sacó del patio.
-          </p>
-
-          <div className="flex gap-2 px-1 pb-1">
-            <span className="flex-1" />
-            <span className="w-[72px] text-center font-mono text-[9.5px] tracking-[0.1em] text-apagado uppercase">
-              Dejó
-            </span>
-            <span className="w-[72px] text-center font-mono text-[9.5px] tracking-[0.1em] text-apagado uppercase">
-              Se llevó
-            </span>
-          </div>
-
-          <div className="flex flex-col gap-2">
-            {conEnvase.map((p) => (
-              <div key={p.id} className="flex items-center gap-2">
-                <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium">
-                  {p.nombreCorto}
-                </span>
-                <input
-                  value={envases[p.id]?.dejados ?? ''}
-                  onChange={(e) =>
-                    setEnvases((x) => ({
-                      ...x,
-                      [p.id]: { devueltos: x[p.id]?.devueltos ?? '', dejados: e.target.value },
-                    }))
-                  }
-                  inputMode="numeric"
-                  placeholder="0"
-                  className="tabular h-10 w-[72px] rounded-lg border border-linea bg-panel text-center font-bold"
-                  aria-label={`Cajas que dejó de ${p.nombreCorto}`}
-                />
-                <input
-                  value={envases[p.id]?.devueltos ?? ''}
-                  onChange={(e) =>
-                    setEnvases((x) => ({
-                      ...x,
-                      [p.id]: { dejados: x[p.id]?.dejados ?? '', devueltos: e.target.value },
-                    }))
-                  }
-                  inputMode="numeric"
-                  placeholder="0"
-                  className="tabular h-10 w-[72px] rounded-lg border border-linea bg-panel text-center font-bold"
-                  aria-label={`Cajas que se llevó de ${p.nombreCorto}`}
-                />
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="pt-3">
+      <div className="pt-4">
         <p className="pb-1.5 font-mono text-[10px] tracking-[0.14em] text-apagado uppercase">
           Agregar producto
         </p>
-        {productos.length === 0 ? (
+
+        {snap.categorias.length > 0 && (
+          <select
+            value={categoria}
+            onChange={(e) => setCategoria(e.target.value)}
+            className={`mb-2 w-full rounded-xl border bg-panel2 px-2.5 py-2.5 text-[13.5px] ${
+              categoria === 'todas' ? 'border-linea text-tinta2' : 'border-cobre text-cobre2'
+            }`}
+            aria-label="Filtrar por categoría"
+          >
+            <option value="todas">Todas las categorías</option>
+            {snap.categorias.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.nombre}
+              </option>
+            ))}
+          </select>
+        )}
+
+        {snap.productos.length === 0 ? (
           <p className="text-[13px] text-apagado">No hay productos. Créalos en el catálogo.</p>
+        ) : productos.length === 0 ? (
+          <p className="text-[13px] text-apagado">No hay productos en esa categoría.</p>
         ) : (
           <div className="flex flex-wrap gap-1.5">
             {productos.map((p) => (

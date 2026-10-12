@@ -92,8 +92,20 @@ export function CierreView({ pos }: { pos: Pos }) {
                     valor={formato(c.creditoHoy, 'USD')}
                     tono={c.creditoHoy > 0 ? 'ambar' : undefined}
                   />
-                  <Fila etiqueta="Costo de lo vendido" valor={formato(c.costoVendido, 'USD')} />
-                  <Fila etiqueta="Margen bruto" valor={formato(c.margen, 'USD')} tono="verde" fuerte />
+                  {c.costoVendido > 0 && (
+                    <>
+                      <Fila
+                        etiqueta="Costo de lo vendido"
+                        valor={formato(c.costoVendido, 'USD')}
+                      />
+                      <Fila
+                        etiqueta="Margen bruto"
+                        valor={formato(c.margen, 'USD')}
+                        tono="verde"
+                        fuerte
+                      />
+                    </>
+                  )}
                 </div>
                 <p className="mt-3 text-[12px] leading-snug text-apagado">
                   Incluye lo dado a crédito: la mercancía salió aunque la plata no haya entrado.

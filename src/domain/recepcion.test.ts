@@ -127,3 +127,40 @@ describe('cuando un producto llega en varios renglones', () => {
     expect(costoA).toBe(0.7)
   })
 })
+
+describe('una entrada sin costo', () => {
+  /*
+   * La pantalla de recibir dejó de pedir el costo: ahora se teclea nada más
+   * qué llegó y cuánto. El costo sigue existiendo en el modelo porque las
+   * recepciones viejas lo traen, pero una entrada nueva no lo lleva.
+   */
+  it('entra al inventario igual, sin costo unitario', () => {
+    const l = lineaDeRecepcion({
+      producto: POLAR,
+      presentacion: CAJA36,
+      cantidad: 10,
+      ubicacionId: SALA.id,
+    })
+    expect(l.cantidadBase).toBe(360)
+    expect(l.costoUnitarioBase).toBe(0)
+  })
+
+  it('su costo de entrada sale en cero, que es la señal para no promediar', () => {
+    // El dato guardado: quien escribe en la base lo mira para dejar el costo
+    // promedio del producto como estaba en vez de arrastrarlo a cero.
+    const r = construirRecepcion(
+      [
+        lineaDeRecepcion({
+          producto: POLAR,
+          presentacion: CAJA36,
+          cantidad: 10,
+          ubicacionId: SALA.id,
+        }),
+      ],
+      DATOS,
+    )
+    expect(entradaPorProducto(r).get(POLAR.id)?.costoPromedioEntrada).toBe(0)
+    expect(r.unidades).toBe(360)
+    expect(r.total).toBe(0)
+  })
+})

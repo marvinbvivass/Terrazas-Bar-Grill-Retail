@@ -919,7 +919,7 @@ export function usePos() {
       await recargarCatalogo()
       setPendientes(await pendientesDeSubir())
       setAviso({
-        texto: `Entraron ${recepcion.unidades} unidades por ${formato(recepcion.total, 'USD')}`,
+        texto: `Entraron ${recepcion.unidades} unidades`,
         tono: 'ok',
       })
       void sincronizar(true)

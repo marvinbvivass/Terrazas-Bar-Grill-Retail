@@ -66,8 +66,15 @@ export interface EntradaLineaRecepcion {
   producto: Producto
   presentacion: Presentacion
   cantidad: number
-  /** Lo que se pagó por UNA de esa presentación (una caja, un six-pack) */
-  costoPorPresentacion: number
+  /**
+   * Lo que se pagó por UNA de esa presentación (una caja, un six-pack).
+   *
+   * Opcional, y en la práctica siempre ausente: la pantalla de recibir dejó de
+   * pedirlo. El campo sigue aquí porque las recepciones viejas lo tienen y el
+   * kardex lo guarda; una entrada sin costo deja el costo promedio del
+   * producto como estaba, en vez de arrastrarlo a cero.
+   */
+  costoPorPresentacion?: number
   ubicacionId: UUID
 }
 
@@ -76,13 +83,14 @@ export function lineaDeRecepcion(e: EntradaLineaRecepcion): LineaRecepcion {
   // El factor nunca es cero en una presentación válida, pero si lo fuera,
   // dividir daría Infinity y contaminaría el costo promedio del producto.
   const factor = e.presentacion.factor > 0 ? e.presentacion.factor : 1
+  const costo = e.costoPorPresentacion ?? 0
   return {
     id: crypto.randomUUID(),
     productoId: e.producto.id,
     presentacionId: e.presentacion.id,
     cantidad: e.cantidad,
     cantidadBase,
-    costoUnitarioBase: redondear(e.costoPorPresentacion / factor, 4),
+    costoUnitarioBase: redondear(costo / factor, 4),
     ubicacionId: e.ubicacionId,
   }
 }

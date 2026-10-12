@@ -131,8 +131,20 @@ export function HistorialView({ pos, onCargarDia }: { pos: Pos; onCargarDia: () 
                 valor={formato(cierre.cobrosCredito, 'USD')}
               />
             )}
-            <Renglon etiqueta="Costo de lo vendido" valor={formato(cierre.costoVendido, 'USD')} />
-            <Renglon etiqueta="Margen" valor={formato(cierre.margen, 'USD')} tono="verde" fuerte />
+            {cierre.costoVendido > 0 && (
+              <>
+                <Renglon
+                  etiqueta="Costo de lo vendido"
+                  valor={formato(cierre.costoVendido, 'USD')}
+                />
+                <Renglon
+                  etiqueta="Margen"
+                  valor={formato(cierre.margen, 'USD')}
+                  tono="verde"
+                  fuerte
+                />
+              </>
+            )}
             <Renglon etiqueta="Unidades que salieron" valor={String(cierre.unidades)} />
           </Bloque>
 

@@ -82,8 +82,12 @@ export function ActaCierre({ pos, acta }: { pos: Pos; acta: CierreDia }) {
 
       <Bloque titulo="El día">
         <Renglon etiqueta="Unidades que salieron" valor={String(acta.unidades)} />
-        <Renglon etiqueta="Costo de lo vendido" valor={formato(acta.costo, 'USD')} />
-        <Renglon etiqueta="Margen" valor={formato(acta.margen, 'USD')} tono="verde" fuerte />
+        {acta.costo > 0 && (
+          <>
+            <Renglon etiqueta="Costo de lo vendido" valor={formato(acta.costo, 'USD')} />
+            <Renglon etiqueta="Margen" valor={formato(acta.margen, 'USD')} tono="verde" fuerte />
+          </>
+        )}
       </Bloque>
 
       <p className="px-2 pt-4 text-center text-[12px] leading-relaxed text-apagado">
