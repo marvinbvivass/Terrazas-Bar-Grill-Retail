@@ -47,7 +47,7 @@ function mov(
   }
 }
 
-function hoja(movimientos: MovimientoInventario[], stockHoy: number, vacios = new Map<UUID, number>()) {
+function hoja(movimientos: MovimientoInventario[], stockHoy: number, vacios = 0) {
   const filas = construirSemana({
     lunes: LUNES,
     productos: [POLAR],
@@ -159,7 +159,7 @@ describe('las fórmulas van vivas', () => {
       moneda: 'COP',
       tasasPorDia: TASAS,
       diaDePrecios: '2026-10-11',
-      vaciosCompania: new Map(),
+      vaciosCompania: 0,
       vaciosClientes: 0,
     })
     expect(valor(filaProducto(h)[10])).toBe('E5-H5-I5+J5')
@@ -193,11 +193,19 @@ describe('lo que el cuaderno no tenía', () => {
     expect(valor(filaProducto(hoja([], 1000))[1])).toBe('sí')
   })
 
-  it('lleva al pie las cajas pendientes con la compañía', () => {
-    const h = hoja([], 1000, new Map([[POLAR.id, 13]]))
+  it('lleva al pie las cajas pendientes, en una sola cifra', () => {
+    // La gavera es la gavera: una caja devuelta salda una debida sea de la
+    // marca que sea, así que el pie enseña un número y no un reparto.
+    const h = hoja([], 1000, 13)
     const texto = JSON.stringify(h.filas)
-    expect(texto).toContain('VACÍOS')
-    expect(texto).toContain('le debemos')
+    expect(texto).toContain('VACÍOS (en cajas)')
+    expect(texto).toContain('Cajas que le debemos a la compañía')
+    expect(texto).toContain('Llevan envase: Polar 222')
+  })
+
+  it('cuando hay saldo a favor lo dice, en vez de un número negativo', () => {
+    const texto = JSON.stringify(hoja([], 1000, -7).filas)
+    expect(texto).toContain('Cajas a favor con la compañía')
   })
 })
 
@@ -224,7 +232,7 @@ describe('los días que no han llegado', () => {
       moneda: 'COP',
       tasasPorDia: TASAS,
       diaDePrecios: '2026-10-11',
-      vaciosCompania: new Map(),
+      vaciosCompania: 0,
       vaciosClientes: 0,
     })
     const fila = filaProducto(h)
@@ -273,7 +281,7 @@ describe('las tasas del día', () => {
       moneda: 'COP',
       tasasPorDia: [{ dia: LUNES, tasas: { COP: 4100 } }],
       diaDePrecios: LUNES,
-      vaciosCompania: new Map(),
+      vaciosCompania: 0,
       vaciosClientes: 0,
     })
     // Un cero en la casilla de la tasa es una tasa de cero, que dividiría mal

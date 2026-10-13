@@ -216,11 +216,10 @@ export function CierreDiaView({ pos }: { pos: Pos }) {
       const seLlevo = Math.max(0, Math.floor(parsearMonto(e.seLlevo)))
       const trajo = Math.max(0, Math.floor(parsearMonto(e.trajo)))
       if (seLlevo === trajo) continue
-      await pos.moverVaciosCliente(
-        e.clienteId,
-        [{ productoId: e.productoId, seLlevo, trajo }],
-        { documentoTipo: 'cierre', documentoId: acta?.id ?? null },
-      )
+      await pos.moverVaciosCliente(e.clienteId, seLlevo, trajo, {
+        documentoTipo: 'cierre',
+        documentoId: acta?.id ?? null,
+      })
     }
 
     setGuardando(false)
@@ -388,7 +387,13 @@ function Pasos({ paso, onPaso }: { paso: Paso; onPaso: (p: Paso) => void }) {
 export interface RenglonEnvase {
   key: string
   clienteId: UUID
-  productoId: UUID
+  /*
+   * Sin producto: los vacíos no distinguen marca.
+   *
+   * La gavera es la gavera. Pedir aquí de qué producto eran las cajas obligaba
+   * a inventar un reparto que en el patio nadie hace, y a teclear un renglón
+   * por marca para un cliente que se llevó cuatro cajas y punto.
+   */
   seLlevo: string
   trajo: string
 }
@@ -489,8 +494,9 @@ function PasoCredito({
             Vacíos (en cajas)
           </p>
           <p className="pb-2.5 text-[12.5px] leading-relaxed text-tinta2">
-            ¿Alguien se llevó cajas para su casa? Apúntalas aquí, en cajas. Esto no entra en el
-            cuadre: un vacío no es plata, es un envase que tiene que volver.
+            ¿Alguien se llevó cajas para su casa? Apúntalas aquí, en cajas y sin separar por
+            marca. Esto no entra en el cuadre: un vacío no es plata, es un envase que tiene que
+            volver.
           </p>
 
           <div className="flex flex-col gap-2">
@@ -524,25 +530,7 @@ function PasoCredito({
                 </div>
 
                 <div className="flex gap-2">
-                  {conEnvase.length > 1 && (
-                    <select
-                      value={e.productoId}
-                      onChange={(ev) => {
-                        const copia = [...envases]
-                        copia[i] = { ...e, productoId: ev.target.value }
-                        onEnvases(copia)
-                      }}
-                      className="min-w-0 flex-1 rounded-lg border border-linea bg-panel2 px-2 py-2.5 text-[13.5px]"
-                      aria-label="Producto"
-                    >
-                      {conEnvase.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.nombreCorto}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                  {conEnvase.length <= 1 && <span className="min-w-0 flex-1" />}
+                  <span className="min-w-0 flex-1" />
                   <input
                     value={e.seLlevo}
                     onChange={(ev) => {
@@ -575,13 +563,7 @@ function PasoCredito({
               onClick={() =>
                 onEnvases([
                   ...envases,
-                  {
-                    key: crypto.randomUUID(),
-                    clienteId: '',
-                    productoId: conEnvase[0]?.id ?? '',
-                    seLlevo: '',
-                    trajo: '',
-                  },
+                  { key: crypto.randomUUID(), clienteId: '', seLlevo: '', trajo: '' },
                 ])
               }
               className="rounded-xl border border-dashed border-linea2 py-2.5 text-[14px] font-semibold text-tinta2"

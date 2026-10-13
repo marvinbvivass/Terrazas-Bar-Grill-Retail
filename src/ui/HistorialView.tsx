@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { calcularCierre, masVendidos } from '../domain/cierre'
 import { MONEDAS, formato, formatoNumero } from '../domain/money'
 import { hoy, textoLargo } from '../domain/dias'
-import { saldoCliente, totalDe } from '../domain/vacios'
+
 import type { DiaNegocio } from '../domain/types'
 import type { Pos } from '../hooks/usePos'
 import { Calendario } from './Calendario'
@@ -218,7 +218,7 @@ export function HistorialView({ pos, onCargarDia }: { pos: Pos; onCargarDia: () 
             <Bloque titulo="Vacíos de clientes">
               {vaciosDelDia.map((m) => {
                 const cliente = pos.clientes.find((c) => c.id === m.clienteId)
-                const cajas = totalDe(saldoCliente(m.clienteId ?? '', [m]))
+                const cajas = m.cantidad
                 return (
                   <Renglon
                     key={m.id}

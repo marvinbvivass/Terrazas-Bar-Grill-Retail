@@ -239,6 +239,30 @@ class LicoreriaDB extends Dexie {
         }
       })
 
+    /*
+     * Los vacios dejan de llevarse por producto y pasan a una sola bolsa.
+     *
+     * La gavera es la gavera: si el camion deja diez cajas de Solera Light y se
+     * lleva cinco de Pilsen y cinco de Tercio, se queda en cero. Los
+     * movimientos viejos se convierten sumando sus renglones, que es
+     * exactamente el saldo que ya tenian.
+     */
+    this.version(10)
+      .stores({})
+      .upgrade(async (tx) => {
+        const movimientos = await tx.table('vacios').toArray()
+        for (const m of movimientos) {
+          if (m.cantidad !== undefined || !Array.isArray(m.lineas)) continue
+          await tx.table('vacios').put({
+            ...m,
+            cantidad: m.lineas.reduce(
+              (total: number, l: { cantidad: number }) => total + l.cantidad,
+              0,
+            ),
+            lineas: undefined,
+          })
+        }
+      })
   }
 }
 
@@ -1190,7 +1214,7 @@ export async function reabrirCierre(dia: DiaNegocio): Promise<void> {
     await registrarVacios({
       ...m,
       id: crypto.randomUUID(),
-      lineas: m.lineas.map((l) => ({ ...l, cantidad: -l.cantidad })),
+      cantidad: -m.cantidad,
       nota: `Contrapartida por reapertura del ${actual.dia}`,
       sincronizadoEn: null,
     })

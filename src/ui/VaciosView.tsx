@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { presentacionDeRetorno, productosConEnvase, saldoCliente, totalDe } from '../domain/vacios'
+import { productosConEnvase, saldoCliente } from '../domain/vacios'
 import { parsearMonto } from '../domain/money'
 import type { UUID } from '../domain/types'
 import type { Pos } from '../hooks/usePos'
@@ -11,6 +11,12 @@ import { Hoja } from './Hoja'
  * TODO SE CUENTA EN CAJAS, que es como los mueve el distribuidor: el camión no
  * recibe cuatrocientas ochenta botellas sueltas, recibe trece gaveras.
  *
+ * Y TODO EN UNA SOLA BOLSA, sin distinguir producto. Si el camión deja diez
+ * cajas de Solera Light y se lleva cinco de Pilsen y cinco de Tercio, se queda
+ * en cero: la gavera es la gavera. Llevarlo por marca obligaba a decidir contra
+ * qué deuda iba cada caja devuelta, que es una pregunta que en el patio nadie
+ * se hace.
+ *
  * Dos deudas que van en direcciones contrarias y nunca se suman entre sí. El
  * local le debe cajas a la compañía; los clientes le deben cajas al local.
  * Verlas juntas en un solo número sería como restar lo que debes de lo que te
@@ -21,9 +27,8 @@ export function VaciosView({ pos }: { pos: Pos }) {
   const s = pos.snapshot
 
   const conEnvase = useMemo(() => productosConEnvase(s?.productos ?? []), [s])
-  const nombreDe = (id: UUID) => s?.productos.find((p) => p.id === id)?.nombreCorto ?? 'Producto'
 
-  const debemos = totalDe(pos.vaciosCompania)
+  const debemos = pos.vaciosCompania
   const nosDeben = pos.vaciosDeudores.reduce((x, d) => x + d.total, 0)
 
   if (!s) return null
@@ -51,27 +56,25 @@ export function VaciosView({ pos }: { pos: Pos }) {
           </p>
         )}
 
-        {pos.vaciosCompania.size > 0 && (
-          <section className="mb-3 overflow-hidden rounded-xl border border-linea bg-panel">
-            <h2 className="border-b border-linea px-3.5 py-2 font-mono text-[10px] tracking-[0.16em] text-apagado uppercase">
-              Cajas pendientes con la compañía
-            </h2>
-            <div className="px-3.5 py-1">
-              {[...pos.vaciosCompania].map(([productoId, cantidad]) => (
-                <div key={productoId} className="flex items-baseline justify-between gap-3 py-1.5">
-                  <span className="truncate text-[13.5px]">{nombreDe(productoId)}</span>
-                  <span
-                    className={`tabular shrink-0 text-[15px] font-bold ${
-                      cantidad > 0 ? 'text-alerta' : 'text-verde'
-                    }`}
-                  >
-                    {cantidad > 0
-                      ? `${cantidad} ${cantidad === 1 ? 'caja' : 'cajas'}`
-                      : `${-cantidad} a favor`}
-                  </span>
-                </div>
-              ))}
-            </div>
+        {debemos !== 0 && (
+          <section className="mb-3 rounded-xl border border-linea bg-panel px-3.5 py-3">
+            <p className="font-mono text-[10px] tracking-[0.16em] text-apagado uppercase">
+              Con la compañía
+            </p>
+            <p
+              className={`tabular pt-1 text-[15px] font-bold ${
+                debemos > 0 ? 'text-alerta' : 'text-verde'
+              }`}
+            >
+              {debemos > 0
+                ? `${debemos} ${debemos === 1 ? 'caja pendiente' : 'cajas pendientes'} de devolver`
+                : `${-debemos} ${debemos === -1 ? 'caja' : 'cajas'} a favor`}
+            </p>
+            {debemos < 0 && (
+              <p className="pt-1 text-[12px] leading-relaxed text-apagado">
+                Se devolvieron más de las que se recibieron. Se descuentan del próximo despacho.
+              </p>
+            )}
           </section>
         )}
 
@@ -90,18 +93,15 @@ export function VaciosView({ pos }: { pos: Pos }) {
                   key={d.clienteId}
                   className="flex items-baseline justify-between gap-3 border-b border-linea px-3.5 py-2.5 last:border-b-0"
                 >
-                  <div className="min-w-0">
-                    <p className="truncate text-[14px] font-semibold">
-                      {pos.clientes.find((c) => c.id === d.clienteId)?.nombre ?? 'Cliente'}
-                    </p>
-                    <p className="truncate font-mono text-[10.5px] text-apagado">
-                      {[...d.porProducto]
-                        .map(([pid, n]) => `${nombreDe(pid)} ${n}`)
-                        .join(' · ')}
-                    </p>
-                  </div>
-                  <span className="tabular shrink-0 text-[16px] font-bold text-ambar">
-                    {d.total}
+                  <p className="min-w-0 truncate text-[14px] font-semibold">
+                    {pos.clientes.find((c) => c.id === d.clienteId)?.nombre ?? 'Cliente'}
+                  </p>
+                  <span
+                    className={`tabular shrink-0 text-[16px] font-bold ${
+                      d.total > 0 ? 'text-ambar' : 'text-verde'
+                    }`}
+                  >
+                    {d.total > 0 ? d.total : `${-d.total} a favor`}
                   </span>
                 </li>
               ))}
@@ -110,7 +110,8 @@ export function VaciosView({ pos }: { pos: Pos }) {
         </section>
 
         <p className="px-1 pt-4 text-center text-[12px] leading-relaxed text-apagado">
-          Todo va en cajas, como lo cuenta el camión. Las dos deudas van en direcciones
+          Todo va en cajas, como lo cuenta el camión, y sin separar por marca: una gavera devuelta
+          salda una gavera debida, sea del producto que sea. Las dos deudas van en direcciones
           contrarias y no se restan entre sí: que un cliente te deba tres cajas no paga las que le
           debes al distribuidor.
         </p>
@@ -120,14 +121,13 @@ export function VaciosView({ pos }: { pos: Pos }) {
         <div className="flex gap-2">
           <button
             onClick={() => setHoja('compania')}
-            disabled={conEnvase.length === 0}
-            className="flex-1 rounded-xl bg-cobre py-3 text-[14.5px] font-bold text-fondo disabled:opacity-40"
+            className="flex-1 rounded-xl bg-cobre py-3 text-[14.5px] font-bold text-fondo"
           >
             Con la compañía
           </button>
           <button
             onClick={() => setHoja('cliente')}
-            disabled={conEnvase.length === 0 || pos.clientes.length === 0}
+            disabled={pos.clientes.length === 0}
             className="flex-1 rounded-xl border border-linea2 py-3 text-[14.5px] font-semibold text-tinta2 disabled:opacity-40"
           >
             Con un cliente
@@ -159,23 +159,20 @@ function Cabecera({
   )
 }
 
-/** Movimiento con la compañía: lo que dejó el camión y lo que se le devolvió */
+/** Dos casillas: lo que dejó el camión y lo que se le devolvió */
 function HojaCompania({ pos, onCerrar }: { pos: Pos; onCerrar: () => void }) {
-  const conEnvase = productosConEnvase(pos.snapshot?.productos ?? [])
-  const [campos, setCampos] = useState<Record<string, { dejados: string; devueltos: string }>>({})
+  const [dejadas, setDejadas] = useState('')
+  const [devueltas, setDevueltas] = useState('')
   const [nota, setNota] = useState('')
   const [guardando, setGuardando] = useState(false)
 
-  const entradas = conEnvase.map((p) => ({
-    productoId: p.id,
-    dejados: Math.max(0, Math.floor(parsearMonto(campos[p.id]?.dejados ?? ''))),
-    devueltos: Math.max(0, Math.floor(parsearMonto(campos[p.id]?.devueltos ?? ''))),
-  }))
-  const hayAlgo = entradas.some((e) => e.dejados !== e.devueltos)
+  const dejo = Math.max(0, Math.floor(parsearMonto(dejadas)))
+  const llevo = Math.max(0, Math.floor(parsearMonto(devueltas)))
+  const neto = dejo - llevo
 
   async function guardar() {
     setGuardando(true)
-    await pos.moverVaciosCompania(entradas, { nota })
+    await pos.moverVaciosCompania(dejo, llevo, { nota })
     setGuardando(false)
     onCerrar()
   }
@@ -185,101 +182,66 @@ function HojaCompania({ pos, onCerrar }: { pos: Pos; onCerrar: () => void }) {
       titulo="Vacíos con la compañía"
       onCerrar={onCerrar}
       pie={
-        <button
-          onClick={() => void guardar()}
-          disabled={guardando || !hayAlgo}
-          className="w-full rounded-xl bg-cobre py-3.5 text-[16px] font-bold text-fondo disabled:opacity-40"
-        >
-          {guardando ? 'Guardando…' : 'Guardar movimiento'}
-        </button>
+        <>
+          <p className="pb-2 text-center text-[13px] text-apagado">
+            {neto === 0
+              ? 'La deuda queda igual'
+              : neto > 0
+                ? `Quedas debiendo ${neto} ${neto === 1 ? 'caja' : 'cajas'} más`
+                : `Bajas la deuda en ${-neto} ${neto === -1 ? 'caja' : 'cajas'}`}
+          </p>
+          <button
+            onClick={() => void guardar()}
+            disabled={guardando || neto === 0}
+            className="w-full rounded-xl bg-cobre py-3.5 text-[16px] font-bold text-fondo disabled:opacity-40"
+          >
+            {guardando ? 'Guardando…' : 'Guardar movimiento'}
+          </button>
+        </>
       }
     >
-      <p className="pb-3 text-[13.5px] leading-relaxed text-tinta2">
-        Todo en <b>cajas</b>. <b>Dejó</b> son las cajas que vinieron llenas en este despacho y
-        vas a tener que devolver. <b>Se llevó</b> son las cajas de vacíos que el camión sacó del
-        patio.
+      <p className="pb-4 text-[13.5px] leading-relaxed text-tinta2">
+        Todo en <b>cajas</b>, sin separar por marca. <b>Dejó</b> son las cajas que vinieron llenas
+        en este despacho y vas a tener que devolver. <b>Se llevó</b> son las cajas de vacíos que el
+        camión sacó del patio, de la marca que sean.
       </p>
 
-      <div className="flex flex-col gap-2">
-        <div className="flex gap-2 px-1 pb-0.5">
-          <span className="flex-1" />
-          <span className="w-20 text-center font-mono text-[9.5px] tracking-[0.12em] text-apagado uppercase">
-            Dejó (cajas)
-          </span>
-          <span className="w-20 text-center font-mono text-[9.5px] tracking-[0.12em] text-apagado uppercase">
-            Se llevó (cajas)
-          </span>
-        </div>
-        {conEnvase.map((p) => (
-          <div key={p.id} className="flex items-center gap-2">
-            <span className="min-w-0 flex-1 truncate text-[14px] font-medium">
-              {p.nombreCorto}
-              <CajaDe pos={pos} productoId={p.id} />
-            </span>
-            <input
-              value={campos[p.id]?.dejados ?? ''}
-              onChange={(e) =>
-                setCampos((x) => ({
-                  ...x,
-                  [p.id]: { devueltos: x[p.id]?.devueltos ?? '', dejados: e.target.value },
-                }))
-              }
-              inputMode="numeric"
-              placeholder="0"
-              className="tabular h-11 w-20 rounded-lg border border-linea bg-panel2 text-center font-bold"
-              aria-label={`Cajas que dejó de ${p.nombreCorto}`}
-            />
-            <input
-              value={campos[p.id]?.devueltos ?? ''}
-              onChange={(e) =>
-                setCampos((x) => ({
-                  ...x,
-                  [p.id]: { dejados: x[p.id]?.dejados ?? '', devueltos: e.target.value },
-                }))
-              }
-              inputMode="numeric"
-              placeholder="0"
-              className="tabular h-11 w-20 rounded-lg border border-linea bg-panel2 text-center font-bold"
-              aria-label={`Cajas que se llevó de ${p.nombreCorto}`}
-            />
-          </div>
-        ))}
+      <div className="flex gap-3">
+        <Casilla etiqueta="Dejó" valor={dejadas} onCambio={setDejadas} />
+        <Casilla etiqueta="Se llevó" valor={devueltas} onCambio={setDevueltas} />
       </div>
 
       <input
         value={nota}
         onChange={(e) => setNota(e.target.value)}
-        placeholder="Nota (opcional): número de guía, chofer…"
-        className="mt-3 w-full rounded-xl border border-linea bg-panel2 px-3 py-2.5 placeholder:text-apagado"
+        placeholder="Nota (opcional)"
+        className="mt-4 w-full rounded-xl border border-linea bg-panel2 px-3 py-2.5 placeholder:text-apagado"
         aria-label="Nota"
       />
     </Hoja>
   )
 }
 
-/** Movimiento con un cliente: lo que se llevó y lo que trajo */
+/** Dos casillas: lo que se llevó el cliente y lo que trajo */
 function HojaClienteVacios({ pos, onCerrar }: { pos: Pos; onCerrar: () => void }) {
-  const conEnvase = productosConEnvase(pos.snapshot?.productos ?? [])
   const [clienteId, setClienteId] = useState<UUID>('')
-  const [campos, setCampos] = useState<Record<string, { seLlevo: string; trajo: string }>>({})
+  const [seLlevo, setSeLlevo] = useState('')
+  const [trajo, setTrajo] = useState('')
   const [guardando, setGuardando] = useState(false)
 
   const deuda = useMemo(
-    () => (clienteId ? saldoCliente(clienteId, pos.vacios) : new Map<UUID, number>()),
+    () => (clienteId ? saldoCliente(clienteId, pos.vacios) : 0),
     [clienteId, pos.vacios],
   )
 
-  const entradas = conEnvase.map((p) => ({
-    productoId: p.id,
-    seLlevo: Math.max(0, Math.floor(parsearMonto(campos[p.id]?.seLlevo ?? ''))),
-    trajo: Math.max(0, Math.floor(parsearMonto(campos[p.id]?.trajo ?? ''))),
-  }))
-  const hayAlgo = entradas.some((e) => e.seLlevo !== e.trajo)
+  const salieron = Math.max(0, Math.floor(parsearMonto(seLlevo)))
+  const volvieron = Math.max(0, Math.floor(parsearMonto(trajo)))
+  const neto = salieron - volvieron
 
   async function guardar() {
     if (!clienteId) return
     setGuardando(true)
-    await pos.moverVaciosCliente(clienteId, entradas)
+    await pos.moverVaciosCliente(clienteId, salieron, volvieron)
     setGuardando(false)
     onCerrar()
   }
@@ -289,13 +251,20 @@ function HojaClienteVacios({ pos, onCerrar }: { pos: Pos; onCerrar: () => void }
       titulo="Vacíos de un cliente"
       onCerrar={onCerrar}
       pie={
-        <button
-          onClick={() => void guardar()}
-          disabled={guardando || !clienteId || !hayAlgo}
-          className="w-full rounded-xl bg-cobre py-3.5 text-[16px] font-bold text-fondo disabled:opacity-40"
-        >
-          {guardando ? 'Guardando…' : 'Guardar movimiento'}
-        </button>
+        <>
+          {clienteId !== '' && (
+            <p className="pb-2 text-center text-[13px] text-apagado">
+              {neto === 0 ? 'Su deuda queda igual' : `Queda en ${deuda + neto} cajas`}
+            </p>
+          )}
+          <button
+            onClick={() => void guardar()}
+            disabled={guardando || !clienteId || neto === 0}
+            className="w-full rounded-xl bg-cobre py-3.5 text-[16px] font-bold text-fondo disabled:opacity-40"
+          >
+            {guardando ? 'Guardando…' : 'Guardar movimiento'}
+          </button>
+        </>
       }
     >
       <select
@@ -312,82 +281,51 @@ function HojaClienteVacios({ pos, onCerrar }: { pos: Pos; onCerrar: () => void }
         ))}
       </select>
 
-      {clienteId && (
+      {clienteId !== '' && (
         <p className="pt-2 text-[12.5px] text-apagado">
-          {deuda.size === 0
+          {deuda === 0
             ? 'No debe cajas.'
-            : `Debe ${[...deuda]
-                .map(
-                  ([pid, n]) =>
-                    `${n} ${n === 1 ? 'caja' : 'cajas'} de ${
-                      pos.snapshot?.productos.find((p) => p.id === pid)?.nombreCorto ?? ''
-                    }`,
-                )
-                .join(', ')}.`}
+            : deuda > 0
+              ? `Debe ${deuda} ${deuda === 1 ? 'caja' : 'cajas'}.`
+              : `Tiene ${-deuda} ${deuda === -1 ? 'caja' : 'cajas'} a favor.`}
         </p>
       )}
 
-      <div className="flex flex-col gap-2 pt-3">
-        <div className="flex gap-2 px-1 pb-0.5">
-          <span className="flex-1" />
-          <span className="w-20 text-center font-mono text-[9.5px] tracking-[0.12em] text-apagado uppercase">
-            Se llevó (cajas)
-          </span>
-          <span className="w-20 text-center font-mono text-[9.5px] tracking-[0.12em] text-apagado uppercase">
-            Trajo (cajas)
-          </span>
-        </div>
-        {conEnvase.map((p) => (
-          <div key={p.id} className="flex items-center gap-2">
-            <span className="min-w-0 flex-1 truncate text-[14px] font-medium">
-              {p.nombreCorto}
-              <CajaDe pos={pos} productoId={p.id} />
-            </span>
-            <input
-              value={campos[p.id]?.seLlevo ?? ''}
-              onChange={(e) =>
-                setCampos((x) => ({
-                  ...x,
-                  [p.id]: { trajo: x[p.id]?.trajo ?? '', seLlevo: e.target.value },
-                }))
-              }
-              inputMode="numeric"
-              placeholder="0"
-              className="tabular h-11 w-20 rounded-lg border border-linea bg-panel2 text-center font-bold"
-              aria-label={`Cajas que se llevó de ${p.nombreCorto}`}
-            />
-            <input
-              value={campos[p.id]?.trajo ?? ''}
-              onChange={(e) =>
-                setCampos((x) => ({
-                  ...x,
-                  [p.id]: { seLlevo: x[p.id]?.seLlevo ?? '', trajo: e.target.value },
-                }))
-              }
-              inputMode="numeric"
-              placeholder="0"
-              className="tabular h-11 w-20 rounded-lg border border-linea bg-panel2 text-center font-bold"
-              aria-label={`Cajas que trajo de ${p.nombreCorto}`}
-            />
-          </div>
-        ))}
-      </div>
-
-      <p className="px-1 pt-3 text-center text-[12px] leading-relaxed text-apagado">
-        Todo en cajas. El que llega con dos cajas de vacíos y se lleva dos llenas no queda
-        debiendo nada: escribe dos y dos, y no se guarda movimiento.
+      <p className="pt-4 pb-3 text-[13.5px] leading-relaxed text-tinta2">
+        En <b>cajas</b>. El que se toma la botella en el local no debe nada: el envase se queda
+        aquí.
       </p>
+
+      <div className="flex gap-3">
+        <Casilla etiqueta="Se llevó" valor={seLlevo} onCambio={setSeLlevo} />
+        <Casilla etiqueta="Trajo" valor={trajo} onCambio={setTrajo} />
+      </div>
     </Hoja>
   )
 }
 
-/** De cuántas unidades es la caja de ese producto, como referencia */
-function CajaDe({ pos, productoId }: { pos: Pos; productoId: UUID }) {
-  const pres = presentacionDeRetorno(pos.snapshot?.presentacionesPorProducto.get(productoId) ?? [])
-  if (!pres) return null
+function Casilla({
+  etiqueta,
+  valor,
+  onCambio,
+}: {
+  etiqueta: string
+  valor: string
+  onCambio: (v: string) => void
+}) {
   return (
-    <span className="pl-1.5 font-mono text-[10px] text-apagado">
-      {pres.nombre} &times;{pres.factor}
-    </span>
+    <label className="flex-1">
+      <span className="block pb-1 text-center font-mono text-[10px] tracking-[0.12em] text-apagado uppercase">
+        {etiqueta}
+      </span>
+      <input
+        value={valor}
+        onChange={(e) => onCambio(e.target.value)}
+        inputMode="numeric"
+        placeholder="0"
+        className="tabular h-14 w-full rounded-xl border border-linea bg-panel2 text-center text-[22px] font-bold"
+        aria-label={`${etiqueta}, en cajas`}
+      />
+    </label>
   )
 }

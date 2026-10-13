@@ -33,7 +33,6 @@ import {
   deudoresDeVacios,
   saldoCliente,
   saldoCompania,
-  totalDe,
   vaciosDeCliente,
   vaciosDeCompania,
   type MovimientoVacios,
@@ -725,11 +724,12 @@ export function usePos() {
 
   const moverVaciosCompania = useCallback(
     async (
-      entradas: Array<{ productoId: UUID; dejados: number; devueltos: number }>,
+      dejadas: number,
+      devueltas: number,
       opciones?: { documentoId?: UUID | null; nota?: string | null },
     ) => {
       if (!snapshot || bloqueadoPorCierre()) return null
-      const mov = vaciosDeCompania(entradas, {
+      const mov = vaciosDeCompania(dejadas, devueltas, {
         dia,
         fecha: inicioDe(dia) + 12 * 3600_000,
         usuarioId: snapshot.usuarioId,
@@ -746,11 +746,12 @@ export function usePos() {
   const moverVaciosCliente = useCallback(
     async (
       clienteId: UUID,
-      entradas: Array<{ productoId: UUID; seLlevo: number; trajo: number }>,
+      seLlevo: number,
+      trajo: number,
       opciones?: { documentoTipo?: 'cierre' | 'manual'; documentoId?: UUID | null; nota?: string | null },
     ) => {
       if (!snapshot || bloqueadoPorCierre()) return null
-      const mov = vaciosDeCliente(clienteId, entradas, {
+      const mov = vaciosDeCliente(clienteId, seLlevo, trajo, {
         dia,
         fecha: inicioDe(dia) + 12 * 3600_000,
         usuarioId: snapshot.usuarioId,
@@ -765,20 +766,20 @@ export function usePos() {
     [snapshot, dia, clientes, registrarVaciosMov, bloqueadoPorCierre],
   )
 
-  /** Envases que el local le debe a la compañia, por producto */
+  /** Cajas de vacíos que el local le debe a la compañía */
   const vaciosCompania = useMemo(() => saldoCompania(vacios), [vacios])
   /** Clientes que deben envases, de mayor a menor */
   const vaciosDeudores = useMemo(() => deudoresDeVacios(vacios), [vacios])
   /** Todo lo pendiente de envases, para la insignia del menú */
   const vaciosPendientes = useMemo(
     () =>
-      Math.max(0, totalDe(vaciosCompania)) +
+      Math.max(0, vaciosCompania) +
       vaciosDeudores.reduce((x, d) => x + Math.max(0, d.total), 0),
     [vaciosCompania, vaciosDeudores],
   )
 
   const vaciosDe = useCallback(
-    (clienteId: UUID) => totalDe(saldoCliente(clienteId, vacios)),
+    (clienteId: UUID) => saldoCliente(clienteId, vacios),
     [vacios],
   )
 

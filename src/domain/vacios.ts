@@ -1,5 +1,5 @@
 import { redondear } from './money'
-import type { DiaNegocio, Presentacion, Producto, UUID } from './types'
+import type { DiaNegocio, Producto, UUID } from './types'
 
 /**
  * Control de vacíos: los envases retornables que circulan.
@@ -10,11 +10,26 @@ import type { DiaNegocio, Presentacion, Producto, UUID } from './types'
  * multiplicar frente al camión, que es donde se equivoca, y a cuadrar contra un
  * número que el distribuidor no usa.
  *
- * Como los vacíos no tocan existencias, no hace falta convertirlos a unidades
- * en ninguna parte: la caja es la unidad y punto.
+ * ---------------------------------------------------------------------------
+ * UNA SOLA BOLSA, SIN DISTINGUIR PRODUCTO
+ * ---------------------------------------------------------------------------
  *
- * El envase no es del local. Es de la cervecera, y va y viene. Eso crea DOS
- * deudas que no se pueden mezclar porque van en direcciones contrarias:
+ * El saldo es un número y no un reparto por producto, porque así funciona el
+ * patio: si el camión deja diez cajas de Solera Light y se lleva cinco de
+ * Pilsen y cinco de Tercio, se queda en cero. La gavera es la gavera.
+ *
+ * Llevarlo por producto obligaba a inventar una correspondencia que el negocio
+ * no hace —"¿estas cinco cajas contra cuál de las deudas van?"— y producía
+ * saldos absurdos: deber diez cajas de una marca y tener cinco a favor de otra,
+ * con el patio vacío y las cuentas claras para todo el mundo menos para el
+ * sistema.
+ *
+ * Lo que sí distingue el sistema es QUÉ PRODUCTOS llevan envase: una lata no
+ * genera vacío y una botella sí. Eso es del producto; el saldo, no.
+ *
+ * ---------------------------------------------------------------------------
+ * Dos deudas, en direcciones contrarias
+ * ---------------------------------------------------------------------------
  *
  *   CON LA COMPAÑÍA — El camión deja mercancía llena y el local queda debiendo
  *   esos envases. La deuda sube al recibir y baja cuando se le entregan vacíos
@@ -25,6 +40,9 @@ import type { DiaNegocio, Presentacion, Producto, UUID } from './types'
  *   envase del local. La deuda del cliente sube cuando la botella sale y baja
  *   cuando la trae de vuelta. El que se la toma ahí mismo no debe nada: el
  *   envase se queda.
+ *
+ * Nunca se suman entre sí: que un cliente te deba tres cajas no paga las que le
+ * debes al distribuidor.
  *
  * ---------------------------------------------------------------------------
  * El signo
@@ -39,12 +57,6 @@ import type { DiaNegocio, Presentacion, Producto, UUID } from './types'
 
 export type ContraparteVacios = 'compania' | 'cliente'
 
-export interface LineaVacios {
-  productoId: UUID
-  /** EN CAJAS. Positivo sube la deuda, negativo la baja. */
-  cantidad: number
-}
-
 export interface MovimientoVacios {
   id: UUID
   dia: DiaNegocio
@@ -56,7 +68,8 @@ export interface MovimientoVacios {
   /** Qué lo originó, para poder rastrearlo */
   documentoTipo: 'recepcion' | 'cierre' | 'manual'
   documentoId: UUID | null
-  lineas: LineaVacios[]
+  /** EN CAJAS, con signo. Positivo sube la deuda, negativo la baja. */
+  cantidad: number
   nota: string | null
   creadoOffline: boolean
   sincronizadoEn: number | null
@@ -72,28 +85,21 @@ export interface DatosVacios {
   creadoOffline: boolean
 }
 
-/** Un renglón tal como se teclea, en CAJAS: cuántas salieron y cuántas volvieron */
-export interface EntradaVacios {
-  productoId: UUID
-  /** Cajas que se suman a la deuda */
-  suman: number
-  /** Cajas que la bajan */
-  restan: number
-}
-
 function construir(
   contraparte: ContraparteVacios,
   clienteId: UUID | null,
-  entradas: EntradaVacios[],
+  suman: number,
+  restan: number,
   datos: DatosVacios,
 ): MovimientoVacios | null {
-  const lineas: LineaVacios[] = []
-  for (const e of entradas) {
-    const cantidad = redondear((e.suman || 0) - (e.restan || 0), 0)
-    if (cantidad === 0) continue
-    lineas.push({ productoId: e.productoId, cantidad })
-  }
-  if (lineas.length === 0) return null
+  const cantidad = redondear((suman || 0) - (restan || 0), 0)
+  /*
+   * Un movimiento que no mueve nada no se guarda.
+   *
+   * Diez cajas que entran y diez que salen dejan la deuda igual; un documento
+   * en cero solo ensucia el historial de quien después tenga que entenderlo.
+   */
+  if (cantidad === 0) return null
 
   return {
     id: crypto.randomUUID(),
@@ -104,7 +110,7 @@ function construir(
     clienteId,
     documentoTipo: datos.documentoTipo,
     documentoId: datos.documentoId ?? null,
-    lineas,
+    cantidad,
     nota: datos.nota?.trim() || null,
     creadoOffline: datos.creadoOffline,
     sincronizadoEn: null,
@@ -114,20 +120,16 @@ function construir(
 /**
  * Lo que pasa con la compañía.
  *
- * `dejados` son las cajas que vinieron llenas en este despacho y que el local va
- * a tener que devolver. `devueltos` son las cajas de vacíos que se le entregaron
- * al camión en ese mismo viaje, que es cuando de verdad se entregan.
+ * `dejadas` son las cajas que vinieron llenas en este despacho y que el local
+ * va a tener que devolver. `devueltas` son las cajas de vacíos que se le
+ * entregaron al camión en ese mismo viaje, que es cuando de verdad se entregan.
  */
 export function vaciosDeCompania(
-  entradas: Array<{ productoId: UUID; dejados: number; devueltos: number }>,
+  dejadas: number,
+  devueltas: number,
   datos: DatosVacios,
 ): MovimientoVacios | null {
-  return construir(
-    'compania',
-    null,
-    entradas.map((e) => ({ productoId: e.productoId, suman: e.dejados, restan: e.devueltos })),
-    datos,
-  )
+  return construir('compania', null, dejadas, devueltas, datos)
 }
 
 /**
@@ -139,55 +141,34 @@ export function vaciosDeCompania(
  */
 export function vaciosDeCliente(
   clienteId: UUID,
-  entradas: Array<{ productoId: UUID; seLlevo: number; trajo: number }>,
+  seLlevo: number,
+  trajo: number,
   datos: DatosVacios,
 ): MovimientoVacios | null {
-  return construir(
-    'cliente',
-    clienteId,
-    entradas.map((e) => ({ productoId: e.productoId, suman: e.seLlevo, restan: e.trajo })),
-    datos,
-  )
+  return construir('cliente', clienteId, seLlevo, trajo, datos)
 }
 
 // ---------------------------------------------------------------------------
 // Saldos
 // ---------------------------------------------------------------------------
 
-/** Cuántas CAJAS de vacíos se le deben a la compañía, por producto */
-export function saldoCompania(movimientos: MovimientoVacios[]): Map<UUID, number> {
-  return acumular(movimientos.filter((m) => m.contraparte === 'compania'))
+/** Cuántas CAJAS de vacíos se le deben a la compañía */
+export function saldoCompania(movimientos: MovimientoVacios[]): number {
+  return sumar(movimientos.filter((m) => m.contraparte === 'compania'))
 }
 
-/** Cuántas CAJAS de vacíos debe un cliente, por producto */
-export function saldoCliente(clienteId: UUID, movimientos: MovimientoVacios[]): Map<UUID, number> {
-  return acumular(
-    movimientos.filter((m) => m.contraparte === 'cliente' && m.clienteId === clienteId),
-  )
+/** Cuántas CAJAS de vacíos debe un cliente */
+export function saldoCliente(clienteId: UUID, movimientos: MovimientoVacios[]): number {
+  return sumar(movimientos.filter((m) => m.contraparte === 'cliente' && m.clienteId === clienteId))
 }
 
-function acumular(movimientos: MovimientoVacios[]): Map<UUID, number> {
-  const mapa = new Map<UUID, number>()
-  for (const m of movimientos) {
-    for (const l of m.lineas) {
-      mapa.set(l.productoId, (mapa.get(l.productoId) ?? 0) + l.cantidad)
-    }
-  }
-  // Los ceros no se muestran: un producto saldado no es una deuda.
-  for (const [k, v] of mapa) if (v === 0) mapa.delete(k)
-  return mapa
-}
-
-export function totalDe(saldo: Map<UUID, number>): number {
-  let total = 0
-  for (const v of saldo.values()) total += v
-  return total
+function sumar(movimientos: MovimientoVacios[]): number {
+  return movimientos.reduce((total, m) => total + m.cantidad, 0)
 }
 
 export interface DeudorVacios {
   clienteId: UUID
   total: number
-  porProducto: Map<UUID, number>
 }
 
 /** Los clientes que deben cajas de vacíos, de mayor a menor */
@@ -198,28 +179,17 @@ export function deudoresDeVacios(movimientos: MovimientoVacios[]): DeudorVacios[
   }
 
   return [...clientes]
-    .map((clienteId) => {
-      const porProducto = saldoCliente(clienteId, movimientos)
-      return { clienteId, total: totalDe(porProducto), porProducto }
-    })
+    .map((clienteId) => ({ clienteId, total: saldoCliente(clienteId, movimientos) }))
     .filter((d) => d.total !== 0)
     .sort((a, b) => b.total - a.total)
 }
 
-/** Solo los productos marcados como retornables tienen envase que controlar */
+/**
+ * Qué productos llevan envase.
+ *
+ * El saldo no distingue producto, pero esto sí: sirve para saber si lo que se
+ * vendió genera vacío. Una lata no vuelve; una botella de 1/4, sí.
+ */
 export function productosConEnvase(productos: Producto[]): Producto[] {
   return productos.filter((p) => p.retornable && p.activo)
-}
-
-/**
- * La presentación que hace de caja para los vacíos: la más grande que exista.
- *
- * Sirve solo para enseñar de cuántas unidades habla cada caja; los saldos no
- * dependen de ella. Si el producto no tiene mas que la unidad suelta, devuelve
- * undefined y la pantalla se limita a decir "cajas".
- */
-export function presentacionDeRetorno(presentaciones: Presentacion[]): Presentacion | undefined {
-  const bultos = presentaciones.filter((p) => !p.esBase && p.activo && p.factor > 1)
-  if (bultos.length === 0) return undefined
-  return bultos.reduce((mayor, p) => (p.factor > mayor.factor ? p : mayor))
 }

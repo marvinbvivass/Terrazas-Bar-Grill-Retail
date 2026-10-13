@@ -48,8 +48,8 @@ export interface EntradaExcel {
   tasasPorDia: Array<{ dia: DiaNegocio; tasas: Record<string, number> }>
   /** El día cuya tasa se usó para convertir los precios de la hoja */
   diaDePrecios: DiaNegocio
-  /** Cajas que se le deben a la compañía, por producto */
-  vaciosCompania: Map<UUID, number>
+  /** Cajas que se le deben a la compañía. Una sola bolsa, sin separar marca. */
+  vaciosCompania: number
   /** Cajas que deben los clientes, en total */
   vaciosClientes: number
 }
@@ -240,25 +240,38 @@ export function construirHojaSemana(e: EntradaExcel): HojaExcel {
     ])
   }
 
-  // ---- Los vacíos, que el cuaderno nunca tuvo ----
+  /*
+   * Los vacíos, que el cuaderno nunca tuvo.
+   *
+   * Dos cifras y no un reparto por marca: la gavera es la gavera, y una caja
+   * devuelta salda una caja debida sea del producto que sea. Las dos deudas van
+   * en direcciones contrarias y por eso van en renglones separados: restarlas
+   * daría un número que no significa nada.
+   */
   const conVacios = e.filas.filter((f) => f.producto.retornable)
-  if (conVacios.length > 0) {
+  if (conVacios.length > 0 || e.vaciosCompania !== 0 || e.vaciosClientes !== 0) {
     celdas.push([])
-    celdas.push([texto('VACÍOS — cajas pendientes con la compañía', 'grupo')])
-    for (const f of conVacios) {
-      const cajas = e.vaciosCompania.get(f.producto.id) ?? 0
-      if (cajas === 0) continue
-      celdas.push([
-        texto(f.producto.nombreCorto),
-        null,
-        numero(cajas),
-        texto(cajas > 0 ? 'le debemos' : 'a favor', 'apagado'),
-      ])
-    }
+    celdas.push([texto('VACÍOS (en cajas)', 'grupo')])
+    celdas.push([
+      texto(
+        e.vaciosCompania >= 0
+          ? 'Cajas que le debemos a la compañía'
+          : 'Cajas a favor con la compañía',
+        'fuerte',
+      ),
+      null,
+      numero(Math.abs(e.vaciosCompania), 'fuerte'),
+    ])
     celdas.push([
       texto('Cajas que deben los clientes', 'fuerte'),
       null,
       numero(e.vaciosClientes, 'fuerte'),
+    ])
+    celdas.push([
+      texto(
+        `Llevan envase: ${conVacios.map((f) => f.producto.nombreCorto).join(', ') || 'ninguno'}.`,
+        'apagado',
+      ),
     ])
   }
 
