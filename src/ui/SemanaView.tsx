@@ -11,6 +11,9 @@ import { compararPorOrden } from '../domain/catalogo'
 import { desgloseCorto } from '../domain/stock'
 import { inicioDe, sumarDias } from '../domain/dias'
 import { cargarMovimientosDesde } from '../data/db'
+import { construirXlsx, descargar } from '../data/xlsx'
+import { construirHojaSemana } from '../domain/excelSemana'
+import { useMoneda } from './moneda'
 import { UBICACION_VENTA_DEFECTO } from '../data/seed'
 import type { DiaNegocio, MovimientoInventario, Presentacion, UUID } from '../domain/types'
 import type { Pos } from '../hooks/usePos'
@@ -37,6 +40,7 @@ export function SemanaView({ pos, onIrAlDia }: { pos: Pos; onIrAlDia?: (dia: Dia
   const [categoria, setCategoria] = useState<UUID | 'todas'>('todas')
 
   const s = pos.snapshot
+  const { moneda, aVista } = useMoneda()
 
   useEffect(() => {
     let vivo = true
@@ -70,6 +74,34 @@ export function SemanaView({ pos, onIrAlDia }: { pos: Pos; onIrAlDia?: (dia: Dia
   )
 
   const totales = useMemo(() => totalesPorDia(visibles), [visibles])
+
+  /*
+   * El Excel lleva TODOS los productos, no los que deja ver el filtro.
+   *
+   * Es un papel de control: se imprime para recorrer el deposito con el a un
+   * lado, y lo que no se movio en toda la semana es justo lo que hay que
+   * comprobar con mas cuidado. Un filtro de pantalla no puede decidir que falte
+   * de la hoja que se va a firmar.
+   */
+  function bajarExcel() {
+    if (!s) return
+    const hoja = construirHojaSemana({
+      negocio: 'Terrazas Bar Grill',
+      lunes,
+      filas,
+      categorias: s.categorias,
+      presentacionesPorProducto: s.presentacionesPorProducto,
+      precioDe: (presentacionId) =>
+        aVista(
+          s.precios.find((p) => p.presentacionId === presentacionId && p.listaId === 'lst-detal')
+            ?.precio ?? 0,
+        ),
+      moneda,
+      vaciosCompania: pos.vaciosCompania,
+      vaciosClientes: pos.vaciosDeudores.reduce((x, d) => x + d.total, 0),
+    })
+    descargar(`Terrazas ${hoja.nombre}.xlsx`, construirXlsx([hoja]))
+  }
   const dias = useMemo(() => diasDeLaSemana(lunes), [lunes])
   const esLaDeHoy = lunes === lunesDe(pos.dia)
 
@@ -211,6 +243,19 @@ export function SemanaView({ pos, onIrAlDia }: { pos: Pos; onIrAlDia?: (dia: Dia
                 </tr>
               </tfoot>
             </table>
+          </div>
+
+          <div className="px-3 pt-3">
+            <button
+              onClick={bajarExcel}
+              disabled={filas.length === 0}
+              className="w-full rounded-xl border border-cobre py-3 text-[14.5px] font-bold text-cobre2 disabled:opacity-40"
+            >
+              Descargar el Excel de la semana
+            </button>
+            <p className="pt-1.5 text-center text-[11.5px] text-apagado">
+              Lleva los {filas.length} productos, no solo los que estás viendo.
+            </p>
           </div>
 
           <p className="px-3 pt-3 pb-4 text-center text-[12px] leading-relaxed text-apagado">

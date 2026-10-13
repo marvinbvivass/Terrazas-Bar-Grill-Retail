@@ -1,0 +1,237 @@
+import { letraDeColumna, type Celda, type Estilo, type HojaExcel } from '../data/xlsx'
+import { diasDeLaSemana, textoDeLaSemana, type FilaSemana } from './semana'
+import { textoCorto } from './dias'
+import type { Categoria, DiaNegocio, Presentacion, UUID } from './types'
+
+/**
+ * La semana, en una hoja de cálculo.
+ *
+ * Es el cuaderno de siempre, pero escrito por la aplicación en vez de a mano:
+ * los productos en filas, los días en columnas, el saldo arrastrándose de un
+ * día al siguiente.
+ *
+ * LAS FÓRMULAS VAN VIVAS, no los resultados. Podría escribirse el número y
+ * listo, pero entonces el archivo sería una foto muerta: nadie podría seguir
+ * una cifra con el dedo para ver de dónde sale, que es exactamente para lo que
+ * se imprime. Con las fórmulas puestas, cada saldo enseña su cuenta.
+ *
+ * Y hay una columna que el cuaderno no tenía: MOV. Ahí van las recargas y las
+ * correcciones —mermas y conteos— con su signo. En el cuaderno lo vendido se
+ * deducía restando el conteo de ayer menos el de hoy, así que una botella rota
+ * contaba como vendida. Separarlo es la diferencia entre saber qué se vendió y
+ * suponerlo.
+ */
+
+const DIAS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+
+/** Las cuatro columnas que ocupa cada día */
+const POR_DIA = 4
+const PRIMERA_DIA = 7
+
+export interface EntradaExcel {
+  negocio: string
+  lunes: DiaNegocio
+  filas: FilaSemana[]
+  categorias: Categoria[]
+  presentacionesPorProducto: Map<UUID, Presentacion[]>
+  /** El precio de una presentación, en la moneda en que se va a escribir */
+  precioDe: (presentacionId: UUID) => number
+  moneda: string
+  /** Cajas que se le deben a la compañía, por producto */
+  vaciosCompania: Map<UUID, number>
+  /** Cajas que deben los clientes, en total */
+  vaciosClientes: number
+}
+
+const texto = (valor: string, estilo?: Estilo): Celda => ({ tipo: 'texto', valor, estilo })
+const numero = (valor: number, estilo?: Estilo): Celda => ({ tipo: 'numero', valor, estilo })
+const formula = (f: string, estilo?: Estilo): Celda => ({ tipo: 'formula', formula: f, estilo })
+
+/** La presentación más grande del producto: su caja */
+export function cajaDe(presentaciones: Presentacion[]): Presentacion | null {
+  const bultos = presentaciones.filter((p) => !p.esBase && p.activo)
+  if (bultos.length === 0) return null
+  return bultos.reduce((a, b) => (b.factor > a.factor ? b : a))
+}
+
+export function construirHojaSemana(e: EntradaExcel): HojaExcel {
+  const dias = diasDeLaSemana(e.lunes)
+  const celdas: Celda[][] = []
+  const combinadas: string[] = []
+
+  const col = (i: number) => letraDeColumna(i)
+  const colDia = (d: number) => PRIMERA_DIA + d * POR_DIA
+  const colTotales = PRIMERA_DIA + 7 * POR_DIA
+
+  // ---- Fila 1: el título ----
+  celdas.push([texto(`${e.negocio} · semana ${textoDeLaSemana(e.lunes)}`, 'fuerte')])
+
+  // ---- Fila 2: los días, cada uno sobre sus cuatro columnas ----
+  const fila2: Celda[] = []
+  fila2[0] = texto('FECHA', 'apagado')
+  fila2[2] = texto('APERTURA', 'apagado')
+  fila2[5] = texto(`PRECIOS EN ${e.moneda}`, 'apagado')
+  dias.forEach((d, i) => {
+    fila2[colDia(i)] = texto(`${DIAS[i]} ${textoCorto(d)}`, 'grupo')
+    combinadas.push(`${col(colDia(i))}2:${col(colDia(i) + 3)}2`)
+  })
+  fila2[colTotales] = texto('TOTAL DE LA SEMANA', 'grupo')
+  combinadas.push(`${col(colTotales)}2:${col(colTotales + 2)}2`)
+  celdas.push(fila2)
+
+  // ---- Fila 3: los encabezados de columna ----
+  const fila3: Celda[] = []
+  const encabezado = (i: number, t: string) => {
+    fila3[i] = texto(t, 'cabecera')
+  }
+  encabezado(0, 'Producto')
+  encabezado(1, 'Vacío')
+  encabezado(2, 'Cj.')
+  encabezado(3, 'Unid.')
+  encabezado(4, 'T. Unid.')
+  encabezado(5, 'PVU')
+  encabezado(6, 'PVC')
+  for (let d = 0; d < 7; d++) {
+    encabezado(colDia(d), 'V. Unid.')
+    encabezado(colDia(d) + 1, 'V. Cj.')
+    encabezado(colDia(d) + 2, 'Mov.')
+    encabezado(colDia(d) + 3, 'Saldo')
+  }
+  encabezado(colTotales, 'T.V. Unid.')
+  encabezado(colTotales + 1, 'T.V. Cj.')
+  encabezado(colTotales + 2, 'Ingreso')
+  encabezado(colTotales + 3, 'Quedó')
+  celdas.push(fila3)
+
+  // ---- Las filas de producto, por categoría y por tamaño de caja ----
+  const nombreCategoria = (id: UUID) => e.categorias.find((c) => c.id === id)?.nombre ?? 'Sin categoría'
+
+  const grupos = new Map<string, FilaSemana[]>()
+  for (const f of e.filas) {
+    const caja = cajaDe(e.presentacionesPorProducto.get(f.producto.id) ?? [])
+    const clave = `${f.producto.categoriaId}|${caja?.factor ?? 1}`
+    const lista = grupos.get(clave) ?? []
+    lista.push(f)
+    grupos.set(clave, lista)
+  }
+
+  const filasDeProducto: Array<{ fila: FilaSemana; numero: number; factor: number }> = []
+
+  for (const [clave, lista] of grupos) {
+    const [categoriaId, factorTexto] = clave.split('|')
+    const factor = Number(factorTexto)
+
+    const encabezadoGrupo: Celda[] = []
+    encabezadoGrupo[0] = texto(
+      factor > 1
+        ? `${nombreCategoria(categoriaId!)} — caja de ${factor}`
+        : `${nombreCategoria(categoriaId!)} — suelto`,
+      'grupo',
+    )
+    celdas.push(encabezadoGrupo)
+
+    for (const f of lista) {
+      const presentaciones = e.presentacionesPorProducto.get(f.producto.id) ?? []
+      const base = presentaciones.find((p) => p.esBase)
+      const caja = cajaDe(presentaciones)
+      const n = celdas.length + 1 // número de fila, que empieza en 1
+
+      const fila: Celda[] = []
+      fila[0] = texto(f.producto.nombreCorto)
+      fila[1] = texto(f.producto.retornable ? 'sí' : '')
+      if (factor > 1) {
+        fila[2] = numero(Math.floor(f.apertura / factor))
+        fila[3] = numero(f.apertura - Math.floor(f.apertura / factor) * factor)
+        fila[4] = formula(`(C${n}*${factor})+D${n}`)
+      } else {
+        fila[4] = numero(f.apertura)
+      }
+      fila[5] = numero(base ? e.precioDe(base.id) : 0)
+      if (caja) fila[6] = numero(e.precioDe(caja.id))
+
+      for (let d = 0; d < 7; d++) {
+        const celda = f.dias[d]!
+        const c = colDia(d)
+        if (!celda.futuro) {
+          if (celda.unidades > 0) fila[c] = numero(celda.unidades)
+          if (celda.bultos > 0) fila[c + 1] = numero(celda.bultos)
+          const movimiento = celda.entrada + celda.ajuste
+          if (movimiento !== 0) fila[c + 2] = numero(movimiento)
+        }
+        // El saldo arrastra desde la apertura el primer día y desde el saldo
+        // anterior los demás. Es la cadena que se sigue con el dedo.
+        const previo = d === 0 ? `E${n}` : `${col(colDia(d - 1) + 3)}${n}`
+        const venta =
+          factor > 1
+            ? `${col(c)}${n}-(${col(c + 1)}${n}*${factor})`
+            : `${col(c)}${n}-${col(c + 1)}${n}`
+        fila[c + 3] = formula(`${previo}-${venta}+${col(c + 2)}${n}`, 'apagado')
+      }
+
+      const sumaU = Array.from({ length: 7 }, (_, d) => `${col(colDia(d))}${n}`).join('+')
+      const sumaCj = Array.from({ length: 7 }, (_, d) => `${col(colDia(d) + 1)}${n}`).join('+')
+      fila[colTotales] = formula(sumaU, 'fuerte')
+      fila[colTotales + 1] = formula(sumaCj, 'fuerte')
+      fila[colTotales + 2] = formula(
+        `(${col(colTotales)}${n}*F${n})+(${col(colTotales + 1)}${n}*G${n})`,
+        'dinero',
+      )
+      fila[colTotales + 3] = formula(`${col(colDia(6) + 3)}${n}`, 'fuerte')
+
+      celdas.push(fila)
+      filasDeProducto.push({ fila: f, numero: n, factor })
+    }
+  }
+
+  // ---- El pie: lo vendido cada día y el ingreso de la semana ----
+  if (filasDeProducto.length > 0) {
+    const primera = filasDeProducto[0]!.numero
+    const ultima = filasDeProducto[filasDeProducto.length - 1]!.numero
+    const pie: Celda[] = []
+    pie[0] = texto('Vendido (unidades)', 'fuerte')
+    for (let d = 0; d < 7; d++) {
+      const c = colDia(d)
+      pie[c] = formula(`SUM(${col(c)}${primera}:${col(c)}${ultima})`, 'fuerte')
+    }
+    pie[colTotales + 2] = formula(
+      `SUM(${col(colTotales + 2)}${primera}:${col(colTotales + 2)}${ultima})`,
+      'dinero',
+    )
+    celdas.push([], pie)
+  }
+
+  // ---- Los vacíos, que el cuaderno nunca tuvo ----
+  const conVacios = e.filas.filter((f) => f.producto.retornable)
+  if (conVacios.length > 0) {
+    celdas.push([])
+    celdas.push([texto('VACÍOS — cajas pendientes con la compañía', 'grupo')])
+    for (const f of conVacios) {
+      const cajas = e.vaciosCompania.get(f.producto.id) ?? 0
+      if (cajas === 0) continue
+      celdas.push([
+        texto(f.producto.nombreCorto),
+        null,
+        numero(cajas),
+        texto(cajas > 0 ? 'le debemos' : 'a favor', 'apagado'),
+      ])
+    }
+    celdas.push([
+      texto('Cajas que deben los clientes', 'fuerte'),
+      null,
+      numero(e.vaciosClientes, 'fuerte'),
+    ])
+  }
+
+  const anchos = [22, 6, 6, 7, 9, 8, 9]
+  for (let d = 0; d < 7; d++) anchos.push(8, 7, 7, 9)
+  anchos.push(10, 9, 11, 9)
+
+  return {
+    nombre: `${textoCorto(e.lunes)} - ${textoCorto(dias[6]!)}`.replace(/\//g, ' '),
+    filas: celdas,
+    anchos,
+    combinadas,
+    // La columna del producto y las tres filas de cabecera se quedan quietas
+    congelar: 'B4',
+  }
+}
