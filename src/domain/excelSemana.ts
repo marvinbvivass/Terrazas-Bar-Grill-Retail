@@ -149,7 +149,9 @@ export function construirHojaSemana(e: EntradaExcel): HojaExcel {
 
       const fila: Celda[] = []
       fila[0] = texto(f.producto.nombreCorto)
-      fila[1] = texto(f.producto.retornable ? 'sí' : '')
+      // Celda vacía y no cadena vacía: una columna llena de casillas en blanco
+      // pesa igual que una llena de datos y se lee peor.
+      if (f.producto.retornable) fila[1] = texto('sí', 'fuerte')
       if (factor > 1) {
         fila[2] = numero(Math.floor(f.apertura / factor))
         fila[3] = numero(f.apertura - Math.floor(f.apertura / factor) * factor)
