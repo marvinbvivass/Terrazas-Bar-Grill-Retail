@@ -37,6 +37,17 @@ export interface EntradaExcel {
   /** El precio de una presentación, en la moneda en que se va a escribir */
   precioDe: (presentacionId: UUID) => number
   moneda: string
+  /**
+   * Las tasas vigentes cada día de la semana.
+   *
+   * Van en la hoja porque sin ellas las cifras no se pueden repetir. Dentro de
+   * tres meses, con el peso en otro sitio, nadie podría reconstruir de dónde
+   * salió un precio de esta semana — y una hoja de control que no se puede
+   * rehacer es una hoja en la que hay que creer a ciegas.
+   */
+  tasasPorDia: Array<{ dia: DiaNegocio; tasas: Record<string, number> }>
+  /** El día cuya tasa se usó para convertir los precios de la hoja */
+  diaDePrecios: DiaNegocio
   /** Cajas que se le deben a la compañía, por producto */
   vaciosCompania: Map<UUID, number>
   /** Cajas que deben los clientes, en total */
@@ -198,6 +209,33 @@ export function construirHojaSemana(e: EntradaExcel): HojaExcel {
       'dinero',
     )
     celdas.push([], pie)
+  }
+
+  // ---- Las tasas con las que se miró la semana ----
+  const monedasConTasa = [
+    ...new Set(e.tasasPorDia.flatMap((t) => Object.keys(t.tasas))),
+  ].sort()
+
+  if (monedasConTasa.length > 0) {
+    celdas.push([])
+    celdas.push([texto('TASAS DEL DÍA', 'grupo')])
+    celdas.push([
+      texto('Día', 'cabecera'),
+      ...monedasConTasa.map((m) => texto(m, 'cabecera')),
+    ])
+    e.tasasPorDia.forEach((t, i) => {
+      celdas.push([
+        texto(`${DIAS[i]} ${textoCorto(t.dia)}`),
+        ...monedasConTasa.map((m) => (t.tasas[m] ? numero(t.tasas[m]!) : null)),
+      ])
+    })
+    celdas.push([
+      texto(
+        `Precios de esta hoja en ${e.moneda}, con la tasa del ${textoCorto(e.diaDePrecios)}. ` +
+          'La tasa de un día que no se cargó arrastra la última cargada antes.',
+        'apagado',
+      ),
+    ])
   }
 
   // ---- Los vacíos, que el cuaderno nunca tuvo ----

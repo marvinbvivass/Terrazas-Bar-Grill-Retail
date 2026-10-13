@@ -11,6 +11,7 @@ import { compararPorOrden } from '../domain/catalogo'
 import { desgloseCorto } from '../domain/stock'
 import { inicioDe, sumarDias } from '../domain/dias'
 import { cargarMovimientosDesde } from '../data/db'
+import { tasasVigentes } from '../domain/tasas'
 import { construirXlsx, descargar } from '../data/xlsx'
 import { construirHojaSemana } from '../domain/excelSemana'
 import { useMoneda } from './moneda'
@@ -97,6 +98,14 @@ export function SemanaView({ pos, onIrAlDia }: { pos: Pos; onIrAlDia?: (dia: Dia
             ?.precio ?? 0,
         ),
       moneda,
+      /*
+       * Cada día con la tasa que estaba vigente ESE día, no la de hoy.
+       *
+       * Son las que se usaron para cobrar, y sin ellas la hoja no se puede
+       * rehacer dentro de tres meses.
+       */
+      tasasPorDia: dias.map((d) => ({ dia: d, tasas: tasasVigentes(d, pos.tasasDia) })),
+      diaDePrecios: pos.dia,
       vaciosCompania: pos.vaciosCompania,
       vaciosClientes: pos.vaciosDeudores.reduce((x, d) => x + d.total, 0),
     })

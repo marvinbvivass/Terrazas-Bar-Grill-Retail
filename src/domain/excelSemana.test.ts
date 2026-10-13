@@ -8,6 +8,15 @@ import type { Categoria, MovimientoInventario, Presentacion, UUID } from './type
 
 const LUNES = '2026-10-05'
 const CATEGORIAS: Categoria[] = [{ id: 'cat-cerveza', nombre: 'Cerveza', orden: 1 }]
+const TASAS = [
+  { dia: '2026-10-05', tasas: { VES: 36.5, COP: 4100 } },
+  { dia: '2026-10-06', tasas: { VES: 36.8, COP: 4100 } },
+  { dia: '2026-10-07', tasas: { VES: 36.8, COP: 4120 } },
+  { dia: '2026-10-08', tasas: { VES: 37, COP: 4120 } },
+  { dia: '2026-10-09', tasas: { VES: 37, COP: 4150 } },
+  { dia: '2026-10-10', tasas: { VES: 37.2, COP: 4150 } },
+  { dia: '2026-10-11', tasas: { VES: 37.2, COP: 4150 } },
+]
 const PRESENTACIONES = new Map<UUID, Presentacion>([
   [BOTELLA.id, BOTELLA],
   [CAJA36.id, CAJA36],
@@ -55,6 +64,8 @@ function hoja(movimientos: MovimientoInventario[], stockHoy: number, vacios = ne
     presentacionesPorProducto: new Map([[POLAR.id, [BOTELLA, CAJA36]]]),
     precioDe: (id) => (id === CAJA36.id ? 62000 : 2500),
     moneda: 'COP',
+    tasasPorDia: TASAS,
+    diaDePrecios: '2026-10-11',
     vaciosCompania: vacios,
     vaciosClientes: 0,
   })
@@ -146,6 +157,8 @@ describe('las fórmulas van vivas', () => {
       presentacionesPorProducto: new Map([[POLAR.id, [BOTELLA]]]),
       precioDe: () => 1,
       moneda: 'COP',
+      tasasPorDia: TASAS,
+      diaDePrecios: '2026-10-11',
       vaciosCompania: new Map(),
       vaciosClientes: 0,
     })
@@ -209,6 +222,8 @@ describe('los días que no han llegado', () => {
       presentacionesPorProducto: new Map([[POLAR.id, [BOTELLA, CAJA36]]]),
       precioDe: () => 1,
       moneda: 'COP',
+      tasasPorDia: TASAS,
+      diaDePrecios: '2026-10-11',
       vaciosCompania: new Map(),
       vaciosClientes: 0,
     })
@@ -216,5 +231,54 @@ describe('los días que no han llegado', () => {
     // El jueves no ha llegado: sin venta escrita, pero con su fórmula de saldo
     expect(fila[19]).toBeUndefined()
     expect(valor(fila[22])).toContain('-')
+  })
+})
+
+describe('las tasas del día', () => {
+  it('van en la hoja, una línea por día', () => {
+    /*
+     * Sin ellas las cifras no se pueden repetir: dentro de tres meses, con el
+     * peso en otro sitio, nadie podría reconstruir de dónde salió un precio de
+     * esta semana, y una hoja de control en la que hay que creer a ciegas no
+     * controla nada.
+     */
+    const h = hoja([], 1000)
+    const texto = JSON.stringify(h.filas)
+    expect(texto).toContain('TASAS DEL DÍA')
+    expect(texto).toContain('4100')
+    expect(texto).toContain('37.2')
+  })
+
+  it('dice con qué tasa se convirtieron los precios', () => {
+    // Los precios llevan UNA tasa, la del día que se bajó la hoja; las de cada
+    // día son otras. Confundirlas es cuadrar una semana con el cambio de hoy.
+    expect(JSON.stringify(hoja([], 1000).filas)).toContain('con la tasa del 11/10')
+  })
+
+  it('una moneda sin tasa ese día deja la celda vacía, no en cero', () => {
+    const h = construirHojaSemana({
+      negocio: 'T',
+      lunes: LUNES,
+      filas: construirSemana({
+        lunes: LUNES,
+        productos: [POLAR],
+        movimientos: [],
+        stockActual: () => 0,
+        presentacionesPorId: PRESENTACIONES,
+        hoy: '2026-10-11',
+      }),
+      categorias: CATEGORIAS,
+      presentacionesPorProducto: new Map([[POLAR.id, [BOTELLA, CAJA36]]]),
+      precioDe: () => 1,
+      moneda: 'COP',
+      tasasPorDia: [{ dia: LUNES, tasas: { COP: 4100 } }],
+      diaDePrecios: LUNES,
+      vaciosCompania: new Map(),
+      vaciosClientes: 0,
+    })
+    // Un cero en la casilla de la tasa es una tasa de cero, que dividiría mal
+    // cualquier cuenta que alguien haga encima.
+    const fila = h.filas.find((f) => f[0]?.tipo === 'texto' && f[0].valor.startsWith('Lunes'))
+    expect(fila?.[1]).toEqual({ tipo: 'numero', valor: 4100, estilo: undefined })
   })
 })
