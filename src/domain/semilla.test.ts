@@ -34,15 +34,25 @@ describe('el catálogo que vino del Excel', () => {
     expect(de('Tercio').caja).toBe(24)
   })
 
-  it('solo las cajas de 36 llevan envase', () => {
+  it('llevan envase las botellas de vidrio que el camión se lleva de vuelta', () => {
+    /*
+     * No lo decide el tamaño de la caja: el tercio viene en caja de 24 y
+     * también lleva envase. Lo decide que la botella sea retornable.
+     */
     const conVacio = CATALOGO_TERRAZAS.filter((p) => p.retornable)
     expect(conVacio.map((p) => p.nombreCorto)).toEqual([
       'Pilsen 1/4',
       'Light 1/4',
       'Solera Light 1/4',
       'Solera 1/4',
+      'Tercio',
     ])
-    expect(conVacio.every((p) => p.caja === 36)).toBe(true)
+  })
+
+  it('ninguna lata lleva envase', () => {
+    // La lata no vuelve: se va a la basura y no genera deuda con nadie.
+    const latas = CATALOGO_TERRAZAS.filter((p) => p.nombreCorto.startsWith('Lata'))
+    expect(latas.some((p) => p.retornable)).toBe(false)
   })
 
   it('lleva el contenido de los que no lo decían en el nombre', () => {
@@ -114,7 +124,7 @@ describe('los precios al cargarlos', () => {
   })
 
   it('cuenta cuántos llevan envase, para poder decirlo antes de cargar', () => {
-    expect(conVacio).toBe(4)
+    expect(conVacio).toBe(5)
   })
 
   it('un producto suelto no inventa una caja', () => {

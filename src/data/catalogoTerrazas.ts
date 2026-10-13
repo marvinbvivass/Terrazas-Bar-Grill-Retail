@@ -46,7 +46,7 @@ export const CATALOGO_TERRAZAS: ProductoSemilla[] = [
   { id: 'prod-light-1-4', nombre: 'Cerveza Light 1/4', nombreCorto: 'Light 1/4', categoriaId: 'cat-cerveza', orden: 1, contenido: 222, caja: 36, retornable: true, precioUnidad: 2500, precioCaja: 62000 },
   { id: 'prod-solera-light-1-4', nombre: 'Cerveza Solera Light 1/4', nombreCorto: 'Solera Light 1/4', categoriaId: 'cat-cerveza', orden: 2, contenido: 222, caja: 36, retornable: true, precioUnidad: 2500, precioCaja: 62000 },
   { id: 'prod-solera-1-4', nombre: 'Cerveza Solera 1/4', nombreCorto: 'Solera 1/4', categoriaId: 'cat-cerveza', orden: 3, contenido: 222, caja: 36, retornable: true, precioUnidad: 3000, precioCaja: 70000 },
-  { id: 'prod-tercio', nombre: 'Cerveza Tercio 330 ml', nombreCorto: 'Tercio', categoriaId: 'cat-cerveza', orden: 4, contenido: 330, caja: 24, precioUnidad: 3000, precioCaja: 58000 },
+  { id: 'prod-tercio', nombre: 'Cerveza Tercio 330 ml', nombreCorto: 'Tercio', categoriaId: 'cat-cerveza', orden: 4, contenido: 330, caja: 24, retornable: true, precioUnidad: 3000, precioCaja: 58000 },
   { id: 'prod-lata-pilsen-250', nombre: 'Lata Pilsen 250 ml', nombreCorto: 'Lata Pilsen 250', categoriaId: 'cat-cerveza', orden: 5, contenido: 250, caja: 24, precioUnidad: 3000, precioCaja: 54000 },
   { id: 'prod-lata-pilsen-355', nombre: 'Lata Pilsen 355 ml', nombreCorto: 'Lata Pilsen 355', categoriaId: 'cat-cerveza', orden: 6, contenido: 355, caja: 24, precioUnidad: 3500, precioCaja: 65000 },
   { id: 'prod-lata-light-250', nombre: 'Lata Light 250 ml', nombreCorto: 'Lata Light 250', categoriaId: 'cat-cerveza', orden: 7, contenido: 250, caja: 24, precioUnidad: 3000, precioCaja: 54000 },

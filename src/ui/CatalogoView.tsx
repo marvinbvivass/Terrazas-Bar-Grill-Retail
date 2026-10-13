@@ -303,8 +303,8 @@ function CargaInicial({ pos, onCerrar }: { pos: Pos; onCerrar: () => void }) {
           Se editan después, de a varios con Precios en lote.
         </li>
         <li>
-          <b className="text-tinta2">Llevan vacío las cuatro cajas de 36</b>: Pilsen, Light,
-          Solera Light y Solera 1/4.
+          <b className="text-tinta2">Llevan vacío cinco</b>: Pilsen, Light, Solera Light,
+          Solera 1/4 y el Tercio. Las latas no.
         </li>
         <li>
           <b className="text-tinta2">No se cargan cantidades.</b> Las del Excel son del 5 de
