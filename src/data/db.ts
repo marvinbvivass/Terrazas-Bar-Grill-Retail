@@ -26,6 +26,7 @@ import type { Devolucion } from '../domain/devolucion'
 import type { TasaDia } from '../domain/tasas'
 import { idTasaDia, tasasVigentes } from '../domain/tasas'
 import { movimientosDeDevolucion } from '../domain/devolucion'
+import type { ProductoArmado } from '../domain/catalogo'
 import { movimientosDeAjuste } from '../domain/ajuste'
 import { costoPromedioTrasEntrada, entradaPorProducto, movimientosDeRecepcion } from '../domain/recepcion'
 import { idDeCierre } from '../domain/cierreDia'
@@ -54,6 +55,10 @@ export type Pendiente =
   // Para productos y clientes solo viaja el id: lo que se sube se lee de la
   // base local en el momento del envío, así siempre sube la última versión.
   | { id: UUID; tipo: 'producto'; intentos: number; ultimoError: string | null; creadaEn: number }
+  // Un producto borrado no se puede releer de la base local: el aviso de que
+  // ya no existe tiene que viajar por su cuenta o el servidor lo resucitaria
+  // en la proxima bajada de catalogo.
+  | { id: UUID; tipo: 'productoBorrado'; intentos: number; ultimoError: string | null; creadaEn: number }
   // La categoria viaja entera, y en `null` cuando se borro: la fila local ya
   // no esta para releerla en el momento del envio.
   | {
@@ -587,6 +592,123 @@ export async function actualizarPreciosEnLote(
       })
     }
   })
+}
+
+export interface ResultadoReinicio {
+  ok: boolean
+  productos: number
+  /** Lo que impide reiniciar, cuando no se puede */
+  documentos?: { ventas: number; recepciones: number; ajustes: number; cierres: number }
+}
+
+/**
+ * Reemplaza el catalogo entero: borra lo que hay y escribe lo que viene.
+ *
+ * Se niega si ya hay movimiento registrado —ventas, entradas, ajustes o
+ * cierres—. Esos documentos nombran productos por su id, y borrar el catalogo
+ * debajo los dejaria apuntando a fichas que ya no existen: el historial
+ * quedaria lleno de renglones sin nombre que nadie podria explicar. Para un
+ * negocio que ya arranco, lo que hace falta es editar, no reiniciar.
+ *
+ * Las existencias y el kardex se van con el catalogo: son del producto, no del
+ * negocio, y dejarlos huerfanos haria que el inventario contara fantasmas.
+ */
+export async function reiniciarCatalogo(
+  categorias: Categoria[],
+  armados: ProductoArmado[],
+): Promise<ResultadoReinicio> {
+  const [ventas, recepciones, ajustes, cierres] = await Promise.all([
+    db.ventas.count(),
+    db.recepciones.count(),
+    db.ajustes.count(),
+    db.cierres.count(),
+  ])
+  if (ventas + recepciones + ajustes + cierres > 0) {
+    return { ok: false, productos: 0, documentos: { ventas, recepciones, ajustes, cierres } }
+  }
+
+  await db.transaction(
+    'rw',
+    [
+      db.productos,
+      db.presentaciones,
+      db.codigos,
+      db.precios,
+      db.existencias,
+      db.movimientos,
+      db.categorias,
+      db.outbox,
+    ],
+    async () => {
+      const productosViejos = await db.productos.toArray()
+      const categoriasViejas = await db.categorias.toArray()
+
+      await db.productos.clear()
+      await db.presentaciones.clear()
+      await db.codigos.clear()
+      await db.precios.clear()
+      await db.existencias.clear()
+      await db.movimientos.clear()
+      await db.categorias.clear()
+
+      await db.categorias.bulkPut(categorias)
+      for (const a of armados) {
+        await db.productos.put(a.producto)
+        await db.presentaciones.bulkPut(a.presentaciones)
+        await db.codigos.bulkPut(a.codigos)
+        await db.precios.bulkPut(a.precios)
+      }
+
+      const ahora = Date.now()
+      const idsNuevos = new Set(armados.map((a) => a.producto.id))
+      const catsNuevas = new Set(categorias.map((c) => c.id))
+
+      // Lo que desaparece tiene que desaparecer tambien arriba, o la proxima
+      // bajada de catalogo lo trae de vuelta.
+      for (const p of productosViejos) {
+        if (idsNuevos.has(p.id)) continue
+        await db.outbox.put({
+          id: p.id,
+          tipo: 'productoBorrado',
+          intentos: 0,
+          ultimoError: null,
+          creadaEn: ahora,
+        })
+      }
+      for (const c of categoriasViejas) {
+        if (catsNuevas.has(c.id)) continue
+        await db.outbox.put({
+          id: c.id,
+          tipo: 'categoria',
+          categoria: null,
+          intentos: 0,
+          ultimoError: null,
+          creadaEn: ahora,
+        })
+      }
+      for (const c of categorias) {
+        await db.outbox.put({
+          id: c.id,
+          tipo: 'categoria',
+          categoria: c,
+          intentos: 0,
+          ultimoError: null,
+          creadaEn: ahora,
+        })
+      }
+      for (const a of armados) {
+        await db.outbox.put({
+          id: a.producto.id,
+          tipo: 'producto',
+          intentos: 0,
+          ultimoError: null,
+          creadaEn: ahora,
+        })
+      }
+    },
+  )
+
+  return { ok: true, productos: armados.length }
 }
 
 /**

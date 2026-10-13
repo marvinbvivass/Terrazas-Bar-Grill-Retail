@@ -286,6 +286,44 @@ export async function subirCategorias(
   await lote.commit()
 }
 
+/**
+ * Borra productos arriba, con sus presentaciones, precios, codigos y
+ * existencias.
+ *
+ * Se borra todo lo suyo y no solo la ficha: una presentacion huerfana no
+ * aparece en ningun lado pero sigue ahi, y la proxima bajada de catalogo la
+ * mete en la base local de un producto que ya no existe.
+ */
+export async function borrarProductos(productoIds: string[]): Promise<void> {
+  if (productoIds.length === 0) return
+  const fs = fsdb()
+
+  for (const productoId of productoIds) {
+    const presentaciones = await getDocs(
+      query(collection(fs, 'presentaciones'), where('productoId', '==', productoId)),
+    )
+    const existencias = await getDocs(
+      query(collection(fs, 'existencias'), where('productoId', '==', productoId)),
+    )
+
+    const lote = writeBatch(fs)
+    for (const d of presentaciones.docs) {
+      lote.delete(d.ref)
+      const precios = await getDocs(
+        query(collection(fs, 'precios'), where('presentacionId', '==', d.id)),
+      )
+      for (const p of precios.docs) lote.delete(p.ref)
+      const codigos = await getDocs(
+        query(collection(fs, 'codigos'), where('presentacionId', '==', d.id)),
+      )
+      for (const c of codigos.docs) lote.delete(c.ref)
+    }
+    for (const d of existencias.docs) lote.delete(d.ref)
+    lote.delete(doc(fs, 'productos', productoId))
+    await lote.commit()
+  }
+}
+
 export async function subirConfiguracionSiFalta(): Promise<boolean> {
   const fs = fsdb()
   const marca = await getDoc(doc(fs, 'config', 'sistema'))
@@ -445,6 +483,9 @@ export const transporteFirestore: Transporte = {
   },
   async subirCategorias(entradas) {
     await subirCategorias(entradas)
+  },
+  async borrarProductos(productoIds) {
+    await borrarProductos(productoIds)
   },
   async subirClientes(clienteIds) {
     for (const id of clienteIds) await subirCliente(id)

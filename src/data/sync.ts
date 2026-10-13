@@ -35,6 +35,8 @@ export interface Transporte {
   subirCatalogo(productoIds: string[]): Promise<void>
   /** Sube altas, cambios de nombre y bajas de categoría. `null` es una baja. */
   subirCategorias(entradas: Array<{ id: string; categoria: Categoria | null }>): Promise<void>
+  /** Borra productos arriba, con todo lo suyo. */
+  borrarProductos(productoIds: string[]): Promise<void>
   /** Sube clientes de fiado creados en la caja. */
   subirClientes(clienteIds: string[]): Promise<void>
   /** Sube las actas de cierre. Idempotente por `cierre.id`, que es el día. */
@@ -71,6 +73,9 @@ export const transporteLocal: Transporte = {
     /* sin backend todavía */
   },
   async subirCategorias() {
+    /* sin backend todavía */
+  },
+  async borrarProductos() {
     /* sin backend todavía */
   },
   async subirClientes() {
@@ -118,6 +123,7 @@ export async function empujarCola(limite = 50): Promise<ResultadoEmpuje> {
   const ventas = pendientes.filter((p) => p.tipo === 'venta').map((p) => p.venta)
   const abonos = pendientes.filter((p) => p.tipo === 'abono').map((p) => p.abono)
   const categorias = pendientes.filter((p) => p.tipo === 'categoria')
+  const borrados = pendientes.filter((p) => p.tipo === 'productoBorrado')
   const productos = pendientes.filter((p) => p.tipo === 'producto')
   const clientes = pendientes.filter((p) => p.tipo === 'cliente')
   const cierres = pendientes.filter((p) => p.tipo === 'cierre')
@@ -140,6 +146,20 @@ export async function empujarCola(limite = 50): Promise<ResultadoEmpuje> {
       )
       await db.outbox.bulkDelete(categorias.map((p) => p.id))
       aceptadas += categorias.length
+    }
+
+    /*
+     * Los borrados van antes que las altas.
+     *
+     * Al reemplazar el catálogo, un producto viejo y uno nuevo pueden llamarse
+     * igual. Si primero subieran las altas, durante unos segundos habría dos
+     * fichas con el mismo nombre arriba, y cualquier informe que se sacara en
+     * ese hueco contaría doble.
+     */
+    if (borrados.length) {
+      await transporte.borrarProductos(borrados.map((p) => p.id))
+      await db.outbox.bulkDelete(borrados.map((p) => p.id))
+      aceptadas += borrados.length
     }
 
     // El catálogo va PRIMERO: una venta que menciona un producto que el

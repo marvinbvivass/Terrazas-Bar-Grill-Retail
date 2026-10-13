@@ -19,6 +19,7 @@ import {
 import { useMoneda } from './moneda'
 import { PreciosEnLote } from './PreciosEnLote'
 import { HojaCategorias } from './HojaCategorias'
+import { Hoja } from './Hoja'
 import { compararPorOrden } from '../domain/catalogo'
 import { CONTEXTO_CATALOGO, UBICACION_VENTA_DEFECTO } from '../data/seed'
 import { UNIDADES_CONTENIDO, type Producto, type UnidadContenido, type UUID } from '../domain/types'
@@ -45,6 +46,7 @@ const VACIO: ProductoForm = {
 export function CatalogoView({ pos }: { pos: Pos }) {
   const [editando, setEditando] = useState<ProductoForm | null>(null)
   const [enLote, setEnLote] = useState(false)
+  const [cargaInicial, setCargaInicial] = useState(false)
   const [busqueda, setBusqueda] = useState('')
   const [categoria, setCategoria] = useState<UUID | 'todas'>('todas')
 
@@ -135,6 +137,12 @@ export function CatalogoView({ pos }: { pos: Pos }) {
               hacen falta el nombre, la categoría y el precio de una unidad. Lo demás —el
               paquete, la caja, su precio aparte— se puede agregar después sin rehacer nada.
             </p>
+            <button
+              onClick={() => setCargaInicial(true)}
+              className="mt-4 rounded-lg bg-cobre px-5 py-2.5 text-[14px] font-bold text-fondo hover:bg-cobre2"
+            >
+              Cargar el catálogo del negocio
+            </button>
           </div>
         ) : (
           <>
@@ -212,10 +220,104 @@ export function CatalogoView({ pos }: { pos: Pos }) {
                 })}
               </ul>
             )}
+
+            <div className="pt-6 text-center">
+              <button
+                onClick={() => setCargaInicial(true)}
+                className="font-mono text-[10px] tracking-wider text-apagado uppercase hover:text-alerta"
+              >
+                Reemplazar por el catálogo del negocio
+              </button>
+            </div>
           </>
         )}
       </div>
+
+      {cargaInicial && <CargaInicial pos={pos} onCerrar={() => setCargaInicial(false)} />}
     </div>
+  )
+}
+
+/**
+ * Cargar el catálogo que salió del Excel del negocio.
+ *
+ * Es un botón que borra treinta y seis fichas y escribe otras treinta y seis,
+ * así que la hoja dice ANTES exactamente qué va a pasar: qué entra, qué se va y
+ * con qué tasa se convierten los precios. Un botón destructivo que no enseña
+ * sus consecuencias es un botón que nadie se atreve a tocar dos veces — y el
+ * que lo toca una vez, lo hace sin saber.
+ */
+function CargaInicial({ pos, onCerrar }: { pos: Pos; onCerrar: () => void }) {
+  const { tasas } = useMoneda()
+  const [cargando, setCargando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const tasa = tasas.COP ?? 0
+  const hay = pos.snapshot?.productos.length ?? 0
+
+  async function cargar() {
+    setCargando(true)
+    const r = await pos.cargarCatalogoDelNegocio()
+    setCargando(false)
+    if (!r.ok) setError(r.motivo)
+    else onCerrar()
+  }
+
+  return (
+    <Hoja titulo="Catálogo del negocio" onCerrar={onCerrar}>
+      <p className="text-[13.5px] leading-relaxed text-tinta2">
+        Entran <b>36 productos</b> en 5 categorías —cerveza, sangría, licores, bebidas sin
+        alcohol y refrescos— con sus cajas de 36, 24 y 6, y los precios del Excel.
+      </p>
+
+      <ul className="mt-3 flex flex-col gap-1.5 text-[12.5px] leading-relaxed text-apagado">
+        <li>
+          <b className="text-tinta2">24 entran a 1 peso</b>, los que el Excel no tenía tarifados.
+          Se editan después, de a varios con Precios en lote.
+        </li>
+        <li>
+          <b className="text-tinta2">Llevan vacío las cuatro cajas de 36</b>: Pilsen, Light,
+          Solera Light y Solera 1/4.
+        </li>
+        <li>
+          <b className="text-tinta2">No se cargan cantidades.</b> Las del Excel son del 5 de
+          octubre y desde entonces no se anotó ninguna venta. El inventario arranca en cero y se
+          llena con un conteo físico.
+        </li>
+      </ul>
+
+      {hay > 0 && (
+        <p className="mt-3 rounded-xl border border-alerta/50 bg-alerta/10 px-3 py-2.5 text-[12.5px] leading-relaxed text-alerta">
+          Se borran los <b>{hay} productos</b> que hay ahora, con sus precios, sus existencias y
+          su kardex. No se puede deshacer.
+        </p>
+      )}
+
+      {tasa > 0 ? (
+        <p className="mt-3 text-[12.5px] leading-relaxed text-apagado">
+          Los precios se guardan en dólares con la tasa de hoy: <b>{tasa}</b> pesos por dólar. En
+          pantalla seguirás viéndolos en pesos.
+        </p>
+      ) : (
+        <p className="mt-3 rounded-xl border border-ambar/50 bg-ambar/10 px-3 py-2.5 text-[12.5px] leading-relaxed text-ambar">
+          Falta la tasa del peso. Cárgala en <b>Tasas del día</b> y vuelve: sin ella habría que
+          inventarse un número para convertir los precios.
+        </p>
+      )}
+
+      {error && (
+        <p className="mt-3 rounded-xl border border-alerta/50 bg-alerta/10 px-3 py-2.5 text-[12.5px] leading-relaxed text-alerta">
+          {error}
+        </p>
+      )}
+
+      <button
+        onClick={() => void cargar()}
+        disabled={cargando || tasa <= 0}
+        className="mt-4 w-full rounded-xl bg-cobre py-3.5 text-[16px] font-bold text-fondo disabled:opacity-40"
+      >
+        {cargando ? 'Cargando…' : hay > 0 ? 'Reemplazar el catálogo' : 'Cargar los 36 productos'}
+      </button>
+    </Hoja>
   )
 }
 

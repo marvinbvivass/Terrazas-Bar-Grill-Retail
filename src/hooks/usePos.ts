@@ -54,12 +54,16 @@ import { construirAbono, resumirClientes, saldoDeCliente, ventasAbiertas, type P
 import { hoy, inicioDe } from '../domain/dias'
 import { formato } from '../domain/money'
 import { tasasVigentes, type TasaDia } from '../domain/tasas'
+import { armarProducto } from '../domain/catalogo'
+import { formulariosDeSemilla } from '../domain/semilla'
+import { CATALOGO_TERRAZAS, CATEGORIAS_TERRAZAS } from '../data/catalogoTerrazas'
 import type { Abono, Categoria, Cliente, DiaNegocio, MonedaCodigo, Pago, Presentacion, Producto, UUID, Venta } from '../domain/types'
 import {
   anularVenta,
   cargarMovimientoComercial,
   desactivarProducto as desactivarProductoDb,
   eliminarCategoria as eliminarCategoriaDb,
+  reiniciarCatalogo,
   guardarCategoria as guardarCategoriaDb,
   guardarProducto as guardarProductoDb,
   guardarOrdenProductos,
@@ -90,7 +94,7 @@ import {
   siguienteFolio,
   type Snapshot,
 } from '../data/db'
-import { UBICACION_VENTA_DEFECTO } from '../data/seed'
+import { UBICACION_VENTA_DEFECTO, CONTEXTO_CATALOGO } from '../data/seed'
 import { bajarSnapshot, configurarTransporte, empujarCola } from '../data/sync'
 
 /** Cada cuánto se intenta sincronizar sola, si hay señal */
@@ -940,6 +944,42 @@ export function usePos() {
     [recargarCatalogo, sincronizar],
   )
 
+  /**
+   * Reemplaza el catálogo entero por el que salió del Excel del negocio.
+   *
+   * Hace falta la tasa del peso: los precios del Excel están en pesos y en la
+   * aplicación viven en dólares. Sin tasa no se carga nada — antes que guardar
+   * treinta y seis precios convertidos con un número inventado, no cargar.
+   */
+  const cargarCatalogoDelNegocio = useCallback(async (): Promise<
+    { ok: true; productos: number; sinPrecio: number } | { ok: false; motivo: string }
+  > => {
+    const tasa = tasasVigentesDelDia?.COP ?? 0
+    if (!(tasa > 0)) {
+      return {
+        ok: false,
+        motivo: 'Falta la tasa del peso. Cárgala en Tasas del día y vuelve a intentarlo.',
+      }
+    }
+
+    const { formularios, sinPrecio } = formulariosDeSemilla(CATALOGO_TERRAZAS, tasa)
+    const armados = formularios.map((f) => armarProducto(f, CONTEXTO_CATALOGO))
+    const r = await reiniciarCatalogo(CATEGORIAS_TERRAZAS, armados)
+
+    if (!r.ok) {
+      const d = r.documentos
+      return {
+        ok: false,
+        motivo: `Ya hay movimiento registrado (${d?.ventas ?? 0} ventas, ${d?.recepciones ?? 0} entradas, ${d?.cierres ?? 0} cierres). Reemplazar el catálogo dejaría esos documentos apuntando a productos que ya no existen.`,
+      }
+    }
+
+    await recargarCatalogo()
+    setAviso({ texto: `Cargados ${r.productos} productos`, tono: 'ok' })
+    void sincronizar(true)
+    return { ok: true, productos: r.productos, sinPrecio }
+  }, [tasasVigentesDelDia, recargarCatalogo, sincronizar])
+
   const guardarCategoria = useCallback(
     async (categoria: Categoria) => {
       await guardarCategoriaDb(categoria)
@@ -1121,6 +1161,7 @@ export function usePos() {
     guardarProducto,
     guardarCategoria,
     eliminarCategoria,
+    cargarCatalogoDelNegocio,
     ordenarProductos,
     cambiarPreciosEnLote,
     desactivarProducto,
