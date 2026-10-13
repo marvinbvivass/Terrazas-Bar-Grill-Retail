@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   armarProducto,
   desarmarProducto,
@@ -20,6 +20,7 @@ import { useMoneda } from './moneda'
 import { PreciosEnLote } from './PreciosEnLote'
 import { HojaCategorias } from './HojaCategorias'
 import { Hoja } from './Hoja'
+import type { Conteos } from '../data/db'
 import { compararPorOrden } from '../domain/catalogo'
 import { CONTEXTO_CATALOGO, UBICACION_VENTA_DEFECTO } from '../data/seed'
 import { UNIDADES_CONTENIDO, type Producto, type UnidadContenido, type UUID } from '../domain/types'
@@ -250,16 +251,43 @@ export function CatalogoView({ pos }: { pos: Pos }) {
 function CargaInicial({ pos, onCerrar }: { pos: Pos; onCerrar: () => void }) {
   const { tasas } = useMoneda()
   const [cargando, setCargando] = useState(false)
+  const [borrando, setBorrando] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [confirmacion, setConfirmacion] = useState('')
+  const [cuentas, setCuentas] = useState<Conteos | null>(null)
   const tasa = tasas.COP ?? 0
-  const hay = pos.snapshot?.productos.length ?? 0
+
+  useEffect(() => {
+    void pos.contarDatos().then(setCuentas)
+  }, [pos])
+
+  const hayDatos =
+    cuentas !== null &&
+    cuentas.productos +
+      cuentas.ventas +
+      cuentas.recepciones +
+      cuentas.ajustes +
+      cuentas.cierres +
+      cuentas.clientes >
+      0
 
   async function cargar() {
     setCargando(true)
+    setError(null)
     const r = await pos.cargarCatalogoDelNegocio()
     setCargando(false)
     if (!r.ok) setError(r.motivo)
     else onCerrar()
+  }
+
+  async function borrar() {
+    setBorrando(true)
+    setError(null)
+    const r = await pos.borrarTodosLosDatos()
+    setBorrando(false)
+    setConfirmacion('')
+    if (!r.ok) setError(r.motivo)
+    else setCuentas(await pos.contarDatos())
   }
 
   return (
@@ -285,13 +313,6 @@ function CargaInicial({ pos, onCerrar }: { pos: Pos; onCerrar: () => void }) {
         </li>
       </ul>
 
-      {hay > 0 && (
-        <p className="mt-3 rounded-xl border border-alerta/50 bg-alerta/10 px-3 py-2.5 text-[12.5px] leading-relaxed text-alerta">
-          Se borran los <b>{hay} productos</b> que hay ahora, con sus precios, sus existencias y
-          su kardex. No se puede deshacer.
-        </p>
-      )}
-
       {tasa > 0 ? (
         <p className="mt-3 text-[12.5px] leading-relaxed text-apagado">
           Los precios se guardan en dólares con la tasa de hoy: <b>{tasa}</b> pesos por dólar. En
@@ -315,13 +336,60 @@ function CargaInicial({ pos, onCerrar }: { pos: Pos; onCerrar: () => void }) {
         disabled={cargando || tasa <= 0}
         className="mt-4 w-full rounded-xl bg-cobre py-3.5 text-[16px] font-bold text-fondo disabled:opacity-40"
       >
-        {cargando ? 'Cargando…' : hay > 0 ? 'Reemplazar el catálogo' : 'Cargar los 36 productos'}
+        {cargando ? 'Cargando…' : 'Cargar los 36 productos'}
       </button>
+
+      {/*
+        Empezar de cero.
+
+        Va aquí y no en el menú porque es el único sitio donde tiene sentido: se
+        borra para volver a cargar. Y detrás de una palabra escrita a mano, que
+        es la única barrera que un dedo no cruza por accidente.
+      */}
+      {hayDatos && cuentas && (
+        <div className="mt-6 rounded-xl border border-alerta/40 bg-alerta/[0.06] px-3.5 py-3">
+          <p className="font-mono text-[10px] tracking-[0.14em] text-alerta uppercase">
+            Empezar de cero
+          </p>
+          <p className="pt-1.5 text-[12.5px] leading-relaxed text-tinta2">
+            Hay datos guardados. Si son de pruebas, bórralos antes de cargar el catálogo de
+            verdad.
+          </p>
+
+          <ul className="tabular flex flex-wrap gap-x-4 gap-y-0.5 pt-2 font-mono text-[11px] text-apagado">
+            {cuentas.productos > 0 && <li>{cuentas.productos} productos</li>}
+            {cuentas.ventas > 0 && <li>{cuentas.ventas} ventas</li>}
+            {cuentas.recepciones > 0 && <li>{cuentas.recepciones} entradas</li>}
+            {cuentas.ajustes > 0 && <li>{cuentas.ajustes} ajustes</li>}
+            {cuentas.cierres > 0 && <li>{cuentas.cierres} cierres</li>}
+            {cuentas.clientes > 0 && <li>{cuentas.clientes} clientes</li>}
+            {cuentas.movimientos > 0 && <li>{cuentas.movimientos} movimientos</li>}
+          </ul>
+
+          <p className="pt-2.5 text-[12px] leading-relaxed text-apagado">
+            Se borra aquí <b>y en el servidor</b>, y no se puede deshacer. Se quedan las tasas
+            del día y quién es administrador.
+          </p>
+
+          <input
+            value={confirmacion}
+            onChange={(e) => setConfirmacion(e.target.value)}
+            placeholder="Escribe BORRAR"
+            aria-label="Escribe BORRAR para confirmar"
+            className="mt-2.5 w-full rounded-lg border border-linea bg-panel px-3 py-2.5 text-center font-bold tracking-[0.2em] placeholder:font-normal placeholder:tracking-normal placeholder:text-apagado"
+          />
+          <button
+            onClick={() => void borrar()}
+            disabled={borrando || confirmacion.trim().toUpperCase() !== 'BORRAR'}
+            className="mt-2 w-full rounded-xl bg-alerta py-3 text-[15px] font-bold text-white disabled:opacity-30"
+          >
+            {borrando ? 'Borrando…' : 'Borrar todo'}
+          </button>
+        </div>
+      )}
     </Hoja>
   )
 }
-
-// ---------------------------------------------------------------------------
 
 function Editor({
   pos,

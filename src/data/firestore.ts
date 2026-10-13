@@ -324,6 +324,64 @@ export async function borrarProductos(productoIds: string[]): Promise<void> {
   }
 }
 
+/**
+ * Las colecciones que guardan lo que el negocio ha registrado.
+ *
+ * NO estan: `config`, `ubicaciones`, `listas` y `metodosPago`, que son la forma
+ * del sistema y no datos del negocio; `tasasDia`, que es lo que valia el dolar
+ * cada dia y no puede estar mal; y sobre todo `usuarios`, que guarda quien es
+ * administrador. Borrar esa ultima dejaria la cuenta sin dueno y al siguiente
+ * que entrara convertido en administrador por ser el primero.
+ */
+const COLECCIONES_DEL_NEGOCIO = [
+  'productos',
+  'presentaciones',
+  'codigos',
+  'precios',
+  'existencias',
+  'movimientos',
+  'categorias',
+  'ventas',
+  'clientes',
+  'abonos',
+  'cierres',
+  'recepciones',
+  'ajustes',
+  'vacios',
+  'devoluciones',
+]
+
+/**
+ * Borra en el servidor todo lo que el negocio ha registrado.
+ *
+ * Va en lotes de 400 porque Firestore no acepta mas de 500 operaciones por
+ * lote, y con un margen prudente: si un lote se pasa, falla entero y deja el
+ * borrado a medias, que es el peor sitio donde pararse.
+ */
+export async function borrarTodoArriba(): Promise<number> {
+  const fs = fsdb()
+  let borrados = 0
+
+  for (const nombre of COLECCIONES_DEL_NEGOCIO) {
+    const docs = await getDocs(collection(fs, nombre))
+    let lote = writeBatch(fs)
+    let enLote = 0
+    for (const d of docs.docs) {
+      lote.delete(d.ref)
+      enLote++
+      borrados++
+      if (enLote === 400) {
+        await lote.commit()
+        lote = writeBatch(fs)
+        enLote = 0
+      }
+    }
+    if (enLote > 0) await lote.commit()
+  }
+
+  return borrados
+}
+
 export async function subirConfiguracionSiFalta(): Promise<boolean> {
   const fs = fsdb()
   const marca = await getDoc(doc(fs, 'config', 'sistema'))
@@ -486,6 +544,9 @@ export const transporteFirestore: Transporte = {
   },
   async borrarProductos(productoIds) {
     await borrarProductos(productoIds)
+  },
+  async borrarTodoArriba() {
+    return borrarTodoArriba()
   },
   async subirClientes(clienteIds) {
     for (const id of clienteIds) await subirCliente(id)

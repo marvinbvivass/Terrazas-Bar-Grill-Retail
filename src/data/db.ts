@@ -594,6 +594,94 @@ export async function actualizarPreciosEnLote(
   })
 }
 
+export interface Conteos {
+  productos: number
+  ventas: number
+  recepciones: number
+  ajustes: number
+  cierres: number
+  clientes: number
+  movimientos: number
+  vacios: number
+  devoluciones: number
+  abonos: number
+  pendientes: number
+}
+
+/** Cuanto hay guardado, para poder decirlo antes de borrarlo */
+export async function contarDatos(): Promise<Conteos> {
+  const [
+    productos, ventas, recepciones, ajustes, cierres,
+    clientes, movimientos, vacios, devoluciones, abonos, pendientes,
+  ] = await Promise.all([
+    db.productos.count(),
+    db.ventas.count(),
+    db.recepciones.count(),
+    db.ajustes.count(),
+    db.cierres.count(),
+    db.clientes.count(),
+    db.movimientos.count(),
+    db.vacios.count(),
+    db.devoluciones.count(),
+    db.abonos.count(),
+    db.outbox.count(),
+  ])
+  return {
+    productos, ventas, recepciones, ajustes, cierres,
+    clientes, movimientos, vacios, devoluciones, abonos, pendientes,
+  }
+}
+
+/**
+ * Borra todo lo que el negocio ha registrado en ESTE dispositivo.
+ *
+ * Se va el catalogo, el inventario, las ventas, los clientes, los cierres y
+ * todo el kardex. Se quedan tres cosas, y cada una por su motivo:
+ *
+ *  - La configuracion —ubicaciones, listas de precio, metodos de pago— porque
+ *    no es informacion del negocio sino la forma del sistema, y sin ella el
+ *    motor de precios no arranca.
+ *  - Las tasas del dia, porque no son un dato que pueda estar mal: son lo que
+ *    valia el dolar ese dia. Y porque lo primero que hace falta despues de
+ *    borrar es cargar el catalogo, que sin tasa no se puede convertir.
+ *  - La marca de sistema preparado, para que la proxima sincronizacion no
+ *    vuelva a sembrar las categorias de fabrica encima de las del negocio.
+ *
+ * La cola se vacia tambien: son envios de documentos que ya no existen, y
+ * dejarlos ahi resucitaria arriba lo que se acaba de borrar abajo.
+ */
+export async function borrarDatosLocales(): Promise<void> {
+  await db.transaction(
+    'rw',
+    [
+      db.productos, db.presentaciones, db.codigos, db.precios, db.existencias,
+      db.movimientos, db.categorias, db.ventas, db.clientes, db.abonos,
+      db.cierres, db.recepciones, db.ajustes, db.vacios, db.devoluciones,
+      db.outbox,
+    ],
+    async () => {
+      await Promise.all([
+        db.productos.clear(),
+        db.presentaciones.clear(),
+        db.codigos.clear(),
+        db.precios.clear(),
+        db.existencias.clear(),
+        db.movimientos.clear(),
+        db.categorias.clear(),
+        db.ventas.clear(),
+        db.clientes.clear(),
+        db.abonos.clear(),
+        db.cierres.clear(),
+        db.recepciones.clear(),
+        db.ajustes.clear(),
+        db.vacios.clear(),
+        db.devoluciones.clear(),
+        db.outbox.clear(),
+      ])
+    },
+  )
+}
+
 export interface ResultadoReinicio {
   ok: boolean
   productos: number

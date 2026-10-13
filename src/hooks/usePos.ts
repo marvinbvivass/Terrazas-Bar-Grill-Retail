@@ -56,6 +56,7 @@ import { formato } from '../domain/money'
 import { tasasVigentes, type TasaDia } from '../domain/tasas'
 import { armarProducto } from '../domain/catalogo'
 import { formulariosDeSemilla } from '../domain/semilla'
+import { borrarTodoArriba } from '../data/sync'
 import { CATALOGO_TERRAZAS, CATEGORIAS_TERRAZAS } from '../data/catalogoTerrazas'
 import type { Abono, Categoria, Cliente, DiaNegocio, MonedaCodigo, Pago, Presentacion, Producto, UUID, Venta } from '../domain/types'
 import {
@@ -64,6 +65,8 @@ import {
   desactivarProducto as desactivarProductoDb,
   eliminarCategoria as eliminarCategoriaDb,
   reiniciarCatalogo,
+  borrarDatosLocales,
+  contarDatos,
   guardarCategoria as guardarCategoriaDb,
   guardarProducto as guardarProductoDb,
   guardarOrdenProductos,
@@ -945,6 +948,35 @@ export function usePos() {
   )
 
   /**
+   * Borra todo lo registrado, aquí y en el servidor.
+   *
+   * ARRIBA PRIMERO, y no al revés, por lo que pasa si falla a la mitad: si se
+   * borrara lo local primero y el servidor fallara, la siguiente bajada de
+   * catálogo lo devolvería todo y el borrado habría sido un espejismo. Al
+   * revés, un fallo deja los datos locales intactos y se puede reintentar.
+   */
+  const borrarTodosLosDatos = useCallback(async (): Promise<
+    { ok: true; remotos: number } | { ok: false; motivo: string }
+  > => {
+    let remotos = 0
+    try {
+      remotos = await borrarTodoArriba()
+    } catch (e) {
+      return {
+        ok: false,
+        motivo: `No se pudo borrar en el servidor: ${e instanceof Error ? e.message : 'error'}. No se tocó nada en el teléfono.`,
+      }
+    }
+
+    await borrarDatosLocales()
+    await recargarCatalogo()
+    setRecepciones([])
+    setCierres(await cargarCierres())
+    setAviso({ texto: 'Datos borrados', tono: 'ok' })
+    return { ok: true, remotos }
+  }, [recargarCatalogo])
+
+  /**
    * Reemplaza el catálogo entero por el que salió del Excel del negocio.
    *
    * Hace falta la tasa del peso: los precios del Excel están en pesos y en la
@@ -1162,6 +1194,8 @@ export function usePos() {
     guardarCategoria,
     eliminarCategoria,
     cargarCatalogoDelNegocio,
+    borrarTodosLosDatos,
+    contarDatos,
     ordenarProductos,
     cambiarPreciosEnLote,
     desactivarProducto,

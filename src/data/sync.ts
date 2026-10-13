@@ -37,6 +37,8 @@ export interface Transporte {
   subirCategorias(entradas: Array<{ id: string; categoria: Categoria | null }>): Promise<void>
   /** Borra productos arriba, con todo lo suyo. */
   borrarProductos(productoIds: string[]): Promise<void>
+  /** Borra TODO lo que el negocio ha registrado arriba. Devuelve cuántos documentos. */
+  borrarTodoArriba(): Promise<number>
   /** Sube clientes de fiado creados en la caja. */
   subirClientes(clienteIds: string[]): Promise<void>
   /** Sube las actas de cierre. Idempotente por `cierre.id`, que es el día. */
@@ -78,6 +80,9 @@ export const transporteLocal: Transporte = {
   async borrarProductos() {
     /* sin backend todavía */
   },
+  async borrarTodoArriba() {
+    return 0
+  },
   async subirClientes() {
     /* sin backend todavía */
   },
@@ -114,6 +119,11 @@ export interface ResultadoEmpuje {
   intentadas: number
   aceptadas: number
   rechazadas: number
+}
+
+/** Borra en el servidor todo lo que el negocio ha registrado */
+export async function borrarTodoArriba(): Promise<number> {
+  return transporte.borrarTodoArriba()
 }
 
 export async function empujarCola(limite = 50): Promise<ResultadoEmpuje> {

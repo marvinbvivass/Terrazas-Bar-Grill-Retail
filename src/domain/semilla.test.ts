@@ -45,6 +45,18 @@ describe('el catálogo que vino del Excel', () => {
     expect(conVacio.every((p) => p.caja === 36)).toBe(true)
   })
 
+  it('lleva el contenido de los que no lo decían en el nombre', () => {
+    // El Excel no lo traía: "1/4" y "Tercio" son la medida de toda la vida y
+    // "Gatorade" a secas no dice nada. Los puso el dueño.
+    expect(de('Pilsen 1/4').contenido).toBe(222)
+    expect(de('Tercio').contenido).toBe(330)
+    expect(de('Gatorade').contenido).toBe(500)
+  })
+
+  it('ninguno se queda sin contenido', () => {
+    expect(CATALOGO_TERRAZAS.filter((p) => !p.contenido)).toEqual([])
+  })
+
   it('las cinco categorías son las que usa el negocio', () => {
     expect(CATEGORIAS_TERRAZAS.map((c) => c.nombre)).toEqual([
       'Cerveza',
